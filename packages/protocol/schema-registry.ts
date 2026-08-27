@@ -561,7 +561,7 @@ const stagehandRpcNotificationSchemas = Object.values(StagehandNotifications).ma
     method: z.literal(notification.name),
     params: wireSchema(notification.params, notification.paramsWire),
   }),
-) as RegisteredNotificationSchema[];
+) as unknown as RegisteredNotificationSchema[];
 
 export const StagehandRpcNotificationSchema = z
   .union(

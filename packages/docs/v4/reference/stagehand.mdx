@@ -726,9 +726,15 @@ console.log(product.data, product.metadata.cache.status);
   The natural-language instruction.
 </ParamField>
 
-<ParamField path="schema" type="Schema" optional>
-  The schema used to validate extracted data. Defaults to an object with a string `extraction` field
-  when omitted; when selecting a custom schema generic, provide the matching runtime schema.
+<ParamField path="schema" type="StagehandSchema | StagehandClientExtractOptions" optional>
+  A validator that natively implements Standard Schema V1 and Standard JSON Schema V1. When
+  omitted, extraction defaults to an object with a string `extraction` field. Stagehand constrains
+  the model with the schema's input representation, then validates and returns its transformed
+  output. Validate-only schemas, plain JSON Schema, and TypeBox schemas are not accepted directly.
+  Zod 4.2+ and ArkType work natively. Wrap Valibot schemas with the official
+  `toStandardJsonSchema(...)` adapter from `@valibot/to-json-schema`.
+  Support is limited to projections that pass Stagehand's hardened Draft 2020-12 profile; arbitrary
+  vocabularies and custom semantic keywords are not accepted silently.
 </ParamField>
 
 <ParamField path="options" type="StagehandClientExtractOptions" optional>
@@ -777,10 +783,10 @@ console.log(product.data, product.metadata.cache.status);
   </ParamField>
 </ParamField>
 
-<ResponseField name="result" type="Promise<ExtractResult<Schema>>">
+<ResponseField name="result" type="Promise<ExtractResult<StandardSchemaV1.InferOutput<Schema>>>">
   The extraction result.
 
-  <ResponseField name="result.data" type="z.output<Schema>">
+  <ResponseField name="result.data" type="StandardSchemaV1.InferOutput<Schema>">
     Data validated against the caller's schema.
   </ResponseField>
 
@@ -855,6 +861,74 @@ console.log(product.data, product.metadata.cache.status);
   </ResponseField>
   </ResponseField>
 </ResponseField>
+
+### Supported TypeScript schema implementations
+
+Minimum supported versions are Zod `4.2.0`, ArkType `2.1.28`, Valibot `1.2.0`, and
+`@valibot/to-json-schema` `1.5.0`. The workspace also tests Zod `4.4.3`, ArkType `2.2.3`, Valibot
+`1.4.2`, and adapter `1.7.1`.
+
+<Tabs>
+<Tab title="Zod">
+```typescript
+import { z } from "zod/v4";
+
+const schema = z.object({
+  name: z.string(),
+  price: z.number(),
+  tags: z.array(z.string()).optional(),
+});
+const { data } = await stagehand.extract("extract product", schema);
+```
+</Tab>
+
+<Tab title="ArkType">
+```typescript
+import { type } from "arktype";
+
+const schema = type({ name: "string", "quantity?": "number >= 0" });
+const { data } = await stagehand.extract("extract inventory", schema);
+```
+</Tab>
+
+<Tab title="Valibot">
+```typescript
+import * as v from "valibot";
+import { toStandardJsonSchema } from "@valibot/to-json-schema";
+
+const schema = toStandardJsonSchema(
+  v.object({ name: v.string(), quantity: v.optional(v.number(), 1) }),
+);
+const { data } = await stagehand.extract("extract inventory", schema);
+```
+</Tab>
+
+<Tab title="Custom">
+```typescript
+import type { StagehandSchema } from "@browserbasehq/stagehand";
+
+const schema: StagehandSchema<string, number> = {
+  "~standard": {
+    version: 1,
+    vendor: "my-lib",
+    types: undefined,
+    validate: async (value) =>
+      typeof value === "string"
+        ? { value: value.length }
+        : { issues: [{ message: "Expected string" }] },
+    jsonSchema: {
+      input: () => ({ type: "string" }),
+      output: () => ({ type: "number" }),
+    },
+  },
+};
+const { data } = await stagehand.extract("extract label", schema);
+```
+</Tab>
+</Tabs>
+
+Invalid schema boundaries and converter/profile failures throw `StagehandSchemaError` before RPC.
+Final validation failures throw `StagehandValidationError` with the original Standard Schema issues.
 
 </Tab>
 

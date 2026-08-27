@@ -32,6 +32,8 @@ import {
   type StagehandClientObserveOptions,
 } from "./clientSchemas.js";
 import { CDPConnectionClosedError } from "./cdpClient.js";
+import { isExtractSchemaIntent, resolveExtractSchema, type StagehandSchema } from "./schema.js";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { STAGEHAND_SDK_CLIENT_INFO } from "./sdkIdentity.js";
 import {
   claimStagehandBrowser,
@@ -45,17 +47,12 @@ import type { ExperimentalBatchCallback, ExperimentalBatchOptions } from "./batc
 
 type ProtocolExtractResult = import("../../protocol/types.js").ExtractResult;
 
-export type ExtractResult<Schema extends z.ZodType> = Omit<ProtocolExtractResult, "data"> & {
-  data: z.output<Schema>;
-};
+export type ExtractMetadata = ProtocolExtractResult["metadata"];
 
-const isZodSchema = (value: unknown): value is z.ZodType =>
-  typeof value === "object" &&
-  value !== null &&
-  "parse" in value &&
-  typeof value.parse === "function" &&
-  "safeParse" in value &&
-  typeof value.safeParse === "function";
+export type ExtractResult<Data = DefaultExtractData> = {
+  data: Data;
+  metadata: ExtractMetadata;
+};
 
 const nativeFunctionSourcePattern =
   /^\s*function(?:\s+[^()]*)?\([^)]*\)\s*\{\s*\[native code\]\s*\}\s*$/;
@@ -243,20 +240,19 @@ export class Stagehand {
   async extract(
     instruction: string,
     options?: StagehandClientExtractOptions,
-  ): Promise<ExtractResult<z.ZodType<DefaultExtractData>>>;
-  async extract<Schema extends z.ZodType>(
+  ): Promise<ExtractResult>;
+  async extract<Schema extends StagehandSchema>(
     instruction: string,
     schema: Schema,
     options?: StagehandClientExtractOptions,
-  ): Promise<ExtractResult<Schema>>;
-  async extract<Schema extends z.ZodType | StagehandClientExtractOptions>(
+  ): Promise<ExtractResult<StandardSchemaV1.InferOutput<Schema>>>;
+  async extract(
     instruction: string,
-    schema?: Schema,
+    schema?: StagehandSchema | StagehandClientExtractOptions,
     options?: StagehandClientExtractOptions,
-  ): Promise<ExtractResult<z.ZodType>> {
-    const hasCustomSchema = isZodSchema(schema);
-    const resolvedSchema = hasCustomSchema ? schema : DefaultExtractDataSchema;
-    const resolvedOptions = hasCustomSchema ? options : schema;
+  ): Promise<ExtractResult<unknown>> {
+    const resolvedSchema = isExtractSchemaIntent(schema) ? resolveExtractSchema(schema) : undefined;
+    const resolvedOptions = resolvedSchema ? options : schema;
     const { page, ...clientOptions } = StagehandClientExtractOptionsSchema.parse(
       resolvedOptions ?? {},
     );
@@ -270,13 +266,15 @@ export class Stagehand {
     const response = await this.connectedRpcClient.send(StagehandMethods.stagehandExtract, {
       pageId: targetPage.pageId,
       instruction,
-      ...(hasCustomSchema ? { schema: z.json().parse(z.toJSONSchema(resolvedSchema)) } : {}),
+      ...(resolvedSchema ? { schema: resolvedSchema.jsonSchema } : {}),
       ...(resolvedOptions === undefined ? {} : { options: protocolOptions }),
     });
 
     return {
       ...response,
-      data: resolvedSchema.parse(response.data),
+      data: resolvedSchema
+        ? await resolvedSchema.validate(response.data)
+        : DefaultExtractDataSchema.parse(response.data),
     };
   }
 

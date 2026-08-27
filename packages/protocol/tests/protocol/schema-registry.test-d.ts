@@ -1,5 +1,5 @@
 import { expectTypeOf } from "vitest";
-import type { z } from "zod/v4";
+import { z } from "zod/v4";
 import {
   StagehandMethodSchema,
   StagehandNotifications,

@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { validateDynamicJsonSchema } from "../../protocol/dynamic-json-schema.ts";
 import type {
   ClientModelReference,
   ExtractResult,
@@ -10,25 +11,28 @@ import { TimeoutError } from "../errors.js";
 import * as inference from "../inference.js";
 import type { ClientLlmRequest } from "../llm/clientLlmClient.js";
 import type { GatewayContext } from "../llm/gatewayClient.js";
+import {
+  createStructuredOutputContract,
+  StructuredOutputValidationError,
+} from "../llm/structuredOutput.js";
 import type { StagehandLogger } from "../logger.js";
 import { bytesToBase64 } from "../understudy/fileUploadUtils.js";
 import type { Page } from "../understudy/page.js";
-import type { EncodedId, ZodPathSegments } from "../types/private/internal.js";
-import { injectUrls, transformSchema } from "../utils.js";
+import type { EncodedId, SchemaPathSegments } from "../types/private/internal.js";
+import { injectUrls, transformJsonSchemaUrls } from "../utils.js";
 import { createTimeoutGuard } from "../handlers/handlerUtils/timeoutGuard.js";
 import * as cacheService from "./cacheService.js";
 import * as llmService from "./llmService.js";
 import { disabledCacheMetadata, zeroStagehandResultUsage } from "./resultUsage.js";
 
-/** Replaces URL strings with numeric DOM IDs until extraction has resolved the page's URL map. */
-export function transformUrlStringsToNumericIds<Schema extends z.ZodType>(
-  schema: Schema,
-): [z.ZodType, ZodPathSegments[]] {
-  const [finalSchema, urlPaths] = transformSchema(schema, []);
-  return [finalSchema, urlPaths];
+/** Replaces URL strings with DOM IDs until extraction has resolved the page's URL map. */
+export function transformUrlStringsToNumericIds(
+  schema: Record<string, unknown>,
+): [Record<string, unknown>, SchemaPathSegments[]] {
+  return transformJsonSchemaUrls(schema);
 }
 
-interface ExtractionResponseBase {
+interface ExtractionResponse extends Record<string, unknown> {
   metadata: { completed: boolean };
   prompt_tokens: number;
   completion_tokens: number;
@@ -36,8 +40,6 @@ interface ExtractionResponseBase {
   cached_input_tokens: number;
   inference_time_ms: number;
 }
-
-type ExtractionResponse<Schema extends z.ZodObject> = ExtractionResponseBase & z.infer<Schema>;
 
 export async function extract({
   params,
@@ -96,10 +98,7 @@ export async function extract({
     const screenshot = options?.screenshot
       ? await (async () => {
           ensureTimeRemaining();
-          const image = await page.screenshot({
-            fullPage: false,
-            type: "png",
-          });
+          const image = await page.screenshot({ fullPage: false, type: "png" });
           ensureTimeRemaining();
           return image;
         })()
@@ -109,40 +108,33 @@ export async function extract({
       screenshot
         ? "Starting extraction using an accessibility snapshot and viewport screenshot"
         : "Starting extraction using an accessibility snapshot",
-      {
-        category: "extraction",
-        instruction,
-      },
+      { category: "extraction", instruction },
     );
 
-    const schema = z.fromJSONSchema(params.schema as Parameters<typeof z.fromJSONSchema>[0]);
-    const isObjectSchema = schema instanceof z.ZodObject;
+    const schema = validateDynamicJsonSchema(params.schema);
+    const finalOutputSchema = createStructuredOutputContract("ExtractionResult", schema);
+    const isObjectSchema = schema.type === "object" || isRecord(schema.properties);
     const wrapKey = "value" as const;
-    const objectSchema: z.ZodObject = isObjectSchema
-      ? schema
-      : z.object({
-          [wrapKey]: schema,
-        });
-    const [transformedSchema, urlFieldPaths] = transformUrlStringsToNumericIds(objectSchema);
-
+    const [transformedJsonSchema, urlFieldPaths] = transformUrlStringsToNumericIds(
+      isObjectSchema ? schema : wrapRootSchema(schema, wrapKey),
+    );
+    const transformedSchema = createStructuredOutputContract(
+      "TransformedExtraction",
+      transformedJsonSchema,
+    );
     const screenshotContent: LLMImageContent | undefined = screenshot
-      ? {
-          type: "image",
-          data: bytesToBase64(screenshot),
-          mimeType: "image/png",
-        }
+      ? { type: "image", data: bytesToBase64(screenshot), mimeType: "image/png" }
       : undefined;
 
     ensureTimeRemaining();
-    const extractionResponse: ExtractionResponse<z.ZodObject> =
-      await inference.extract<z.ZodObject>({
-        instruction,
-        domElements: combinedTree,
-        schema: transformedSchema as z.ZodObject,
-        generate: (input) => llmService.generate(model, input, clientLLMGenerate, gateway),
-        userProvidedInstructions: systemPrompt,
-        screenshot: screenshotContent,
-      });
+    const extractionResponse = (await inference.extract({
+      instruction,
+      domElements: combinedTree,
+      schema: transformedSchema,
+      generate: (input) => llmService.generate(model, input, clientLLMGenerate, gateway),
+      userProvidedInstructions: systemPrompt,
+      screenshot: screenshotContent,
+    })) as ExtractionResponse;
     ensureTimeRemaining();
 
     const {
@@ -154,19 +146,12 @@ export async function extract({
       inference_time_ms,
       ...rest
     } = extractionResponse;
-    let output = rest as z.infer<z.ZodObject>;
-
-    const idToUrl: Record<EncodedId, string> = (combinedUrlMap ?? {}) as Record<EncodedId, string>;
+    let output: unknown = rest;
+    const idToUrl = (combinedUrlMap ?? {}) as Record<EncodedId, string>;
     for (const { segments } of urlFieldPaths) {
-      injectUrls(
-        output as Record<string, unknown>,
-        segments,
-        idToUrl as unknown as Record<string, string>,
-      );
+      injectUrls(output, segments, idToUrl as Record<string, string>);
     }
-    if (!isObjectSchema && output && typeof output === "object") {
-      output = (output as Record<string, unknown>)[wrapKey] as z.infer<z.ZodObject>;
-    }
+    if (!isObjectSchema && isRecord(output)) output = output[wrapKey];
 
     logger.info(
       completed
@@ -180,9 +165,12 @@ export async function extract({
       },
     );
 
+    const validation = await finalOutputSchema.validate(output);
+    if (!validation.success) throw new StructuredOutputValidationError(validation.issues);
+    const data = z.json().parse(validation.value);
     return {
       result: {
-        data: z.json().parse(output),
+        data,
         metadata: {
           usage: {
             inputTokens: prompt_tokens,
@@ -194,7 +182,7 @@ export async function extract({
           cache: disabledCacheMetadata(),
         },
       },
-      cacheValue: output,
+      cacheValue: data,
       llmUsage: {
         inputTokens: prompt_tokens,
         outputTokens: completion_tokens,
@@ -202,4 +190,30 @@ export async function extract({
       },
     };
   }
+}
+
+export function wrapRootSchema(
+  schema: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> {
+  for (const keyword of ["$id", "$anchor", "$dynamicAnchor"] as const) {
+    if (schema[keyword] !== undefined) {
+      throw new TypeError(
+        `Cannot wrap a non-object JSON Schema containing ${keyword}; relocation would change its reference scope.`,
+      );
+    }
+  }
+  const { $schema, $defs, ...body } = schema;
+  return {
+    ...($schema === undefined ? {} : { $schema }),
+    ...($defs === undefined ? {} : { $defs }),
+    type: "object",
+    properties: { [key]: body },
+    required: [key],
+    additionalProperties: false,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

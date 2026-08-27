@@ -7,6 +7,10 @@ import { generateText, jsonSchema, Output } from "ai";
 import type { LanguageModel, ModelMessage, ToolSet } from "ai";
 import { z } from "zod/v4";
 import {
+  createStructuredOutputContract,
+  StructuredOutputValidationError,
+} from "./structuredOutput.js";
+import {
   AnthropicModelIdSchema,
   CerebrasModelIdSchema,
   createLLMGenerateResultSchema,
@@ -172,6 +176,14 @@ export async function generateWithAiSdk(
   input: LLMGenerateParams,
 ): Promise<LLMGenerateResult> {
   const params = LLMGenerateParamsSchema.parse(input);
+  const structuredOutputContract =
+    params.responseFormat?.type === "json_schema"
+      ? createStructuredOutputContract(
+          "AI SDK structured output",
+          params.responseFormat.schema as Record<string, unknown>,
+          "AI SDK",
+        )
+      : undefined;
   const configuredTools = "tools" in params ? params.tools : undefined;
   const configuredToolChoice = "toolChoice" in params ? params.toolChoice : undefined;
   if (configuredToolChoice && !configuredTools?.length) {
@@ -201,15 +213,13 @@ export async function generateWithAiSdk(
           output: Output.object({
             name: params.responseFormat.name,
             description: params.responseFormat.description,
-            schema: z.fromJSONSchema(
-              params.responseFormat.schema as Parameters<typeof z.fromJSONSchema>[0],
-            ),
+            schema: dynamicAiSdkSchema(structuredOutputContract!),
           }),
         }
       : {}),
   });
 
-  // The AI SDK result's `output` getter throws NoOutputGeneratedError unless
+  // The AI SDK result'z `output` getter throws NoOutputGeneratedError unless
   // the generation finished with "stop" (e.g. tool-call turns), so only read
   // it when structured output was requested.
   const generation = {
@@ -219,6 +229,11 @@ export async function generateWithAiSdk(
     usage: response.usage,
     ...(params.responseFormat?.type === "json_schema" ? { output: response.output } : {}),
   };
+
+  if (structuredOutputContract !== undefined) {
+    const validation = await structuredOutputContract.validate(response.output);
+    if (!validation.success) throw new StructuredOutputValidationError(validation.issues);
+  }
 
   const result = AiSdkGenerationSchema.transform((value) => {
     const content = [
@@ -262,4 +277,18 @@ export async function generateWithAiSdk(
   const candidate: unknown = result;
   const validatedResult: unknown = createLLMGenerateResultSchema(params).parse(candidate);
   return LLMGenerateResultSchema.parse(validatedResult);
+}
+
+function dynamicAiSdkSchema(contract: ReturnType<typeof createStructuredOutputContract>) {
+  return jsonSchema(contract.jsonSchema, {
+    validate: async (value) => {
+      const result = await contract.validate(value);
+      return result.success
+        ? { success: true as const, value: result.value }
+        : {
+            success: false as const,
+            error: new StructuredOutputValidationError(result.issues),
+          };
+    },
+  });
 }

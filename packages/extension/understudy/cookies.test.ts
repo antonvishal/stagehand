@@ -46,7 +46,7 @@ describe("cookie validation and normalization", () => {
       },
       'Cookie "session" has sameSite: "None" without secure: true. Browsers require secure: true when sameSite is "None".',
     ],
-  ] as const)("returns a Zod issue for invalid cookie input", (cookie, message) => {
+  ] as const)("returns a standard issue for invalid cookie input", (cookie, message) => {
     expect(() => normalizeCookieParams([cookie as CookieParam])).toThrow(z.ZodError);
 
     try {
@@ -57,7 +57,7 @@ describe("cookie validation and normalization", () => {
     }
   });
 
-  it("returns a Zod error for an invalid cookie filter URL", () => {
+  it("returns a validation error for an invalid cookie filter URL", () => {
     expect(() => filterCookies([], ["not a url"])).toThrow(z.ZodError);
   });
 });

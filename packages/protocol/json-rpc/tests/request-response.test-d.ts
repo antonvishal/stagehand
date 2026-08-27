@@ -8,7 +8,7 @@ import {
 
 const JsonValueSchema = z.json();
 
-type JsonValue = z.infer<typeof JsonValueSchema>;
+type JsonValue = z.output<typeof JsonValueSchema>;
 type ExpectedRequest = {
   jsonrpc: "2.0";
   id: number;

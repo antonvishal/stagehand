@@ -1,6 +1,6 @@
 import type { RPCMethod } from "../../protocol/json-rpc/schemas.js";
 import type { StagehandRpcNotification } from "../../protocol/types.js";
-import type { z } from "zod/v4";
+import { z } from "zod/v4";
 
 /** The transport-independent command boundary used by Stagehand's public object model. */
 export interface StagehandCommandClient {

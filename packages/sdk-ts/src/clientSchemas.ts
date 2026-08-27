@@ -18,13 +18,14 @@ import {
   ModelConfigSchema,
   ObserveOptionsSchema,
   StagehandInitParamsSchema,
+  StagehandLogSchema,
   StagehandLogLevelSchema,
 } from "../../protocol/schemas.js";
 import { Page } from "./page.js";
 import { Locator } from "./locator.js";
 import { isStagehandBrowser, type StagehandBrowser } from "./browser/index.js";
 
-export const LocalBrowserLaunchOptionsSchema = z
+const LocalBrowserLaunchOptionsRuntimeSchema = z
   .strictObject({
     args: z.array(z.string()).optional(),
     executablePath: z.string().optional(),
@@ -54,7 +55,7 @@ export const LocalBrowserLaunchOptionsSchema = z
   })
   .meta({ id: "LocalBrowserLaunchOptions" });
 
-export const LocalBrowserConnectOptionsSchema = z
+const LocalBrowserConnectOptionsRuntimeSchema = z
   .strictObject({
     cdpUrl: z.string().min(1),
     extensionId: z.string().min(1).optional(),
@@ -77,19 +78,20 @@ type BrowserbaseLaunchOptionsOutput = Browserbase.SessionCreateParams & {
  * Browserbase owns the session option surface. Keep this object loose so newly added SDK options
  * pass through without requiring a Stagehand protocol or schema update.
  */
-export const BrowserbaseLaunchOptionsSchema = z
+const BrowserbaseLaunchOptionsObjectSchema = z
   .looseObject({
     apiKey: z.string().min(1),
     baseUrl: z.url().default(DEFAULT_BROWSERBASE_URL),
     apiUrl: z.never().optional(),
     type: z.never().optional(),
   })
-  .meta({ id: "BrowserbaseLaunchOptions" }) as z.ZodType<
-  BrowserbaseLaunchOptionsOutput,
-  BrowserbaseLaunchOptionsInput
->;
+  .meta({ id: "BrowserbaseLaunchOptions" });
 
-export const BrowserbaseConnectOptionsSchema = z
+const BrowserbaseLaunchOptionsRuntimeSchema =
+  BrowserbaseLaunchOptionsObjectSchema as typeof BrowserbaseLaunchOptionsObjectSchema &
+    z.ZodType<BrowserbaseLaunchOptionsOutput, BrowserbaseLaunchOptionsInput>;
+
+const BrowserbaseConnectOptionsRuntimeSchema = z
   .strictObject({
     apiKey: z.string().min(1),
     baseUrl: z.url().default(DEFAULT_BROWSERBASE_URL),
@@ -124,14 +126,14 @@ export const BrowserbaseSessionConnectionSchema = z
   })
   .meta({ id: "BrowserbaseSessionConnection" });
 
-export const WebMCPToolsOptionsSchema = ProtocolSchemas.WebMCPToolsOptionsSchema.partial();
+const WebMCPToolsOptionsRuntimeSchema = ProtocolSchemas.WebMCPToolsOptionsSchema.partial();
 
-export const WebMCPInvokeOptionsSchema = ProtocolSchemas.WebMCPInvokeOptionsSchema.partial();
+const WebMCPInvokeOptionsRuntimeSchema = ProtocolSchemas.WebMCPInvokeOptionsSchema.partial();
 
-export const WebMCPResultOptionsSchema = ProtocolSchemas.WebMCPResultOptionsSchema;
+const WebMCPResultOptionsRuntimeSchema = ProtocolSchemas.WebMCPResultOptionsSchema;
 
 /** An LLM callback implemented locally by the SDK consumer. It never crosses the wire. */
-export const ClientLLMSchema = z
+const ClientLLMRuntimeSchema = z
   .strictObject({
     generate: z.function({
       input: [LLMGenerateParamsSchema],
@@ -140,25 +142,32 @@ export const ClientLLMSchema = z
   })
   .meta({ id: "ClientLLM" });
 
-export const StagehandClientLogLevelSchema = z
+const StagehandClientLogLevelRuntimeSchema = z
   .union([StagehandLogLevelSchema, z.literal("off")])
   .meta({ id: "StagehandClientLogLevel" });
 
-export const StagehandClientLogFormatSchema = z
+const StagehandClientLogFormatRuntimeSchema = z
   .enum(["pretty", "json"])
   .meta({ id: "StagehandClientLogFormat" });
 
-export const StagehandClientOnLogSchema = z
-  .custom<(log: StagehandLog) => void | Promise<void>>(
-    (value) => typeof value === "function",
-    "onLog must be a function",
-  )
+const StagehandClientOnLogFunctionSchema = z
+  .function({
+    input: [StagehandLogSchema],
+    // Callback failures are observed by Stagehand after invocation. `any`
+    // permits either a synchronous return or a promise without Zod trying to
+    // synchronously parse the promise itself.
+    output: z.any(),
+  })
   .meta({ id: "StagehandClientOnLog" });
 
-export const StagehandClientLoggingConfigSchema = z
+export const StagehandClientOnLogSchema =
+  StagehandClientOnLogFunctionSchema as typeof StagehandClientOnLogFunctionSchema &
+    z.ZodType<(log: StagehandLog) => void | Promise<void>>;
+
+const StagehandClientLoggingConfigRuntimeSchema = z
   .strictObject({
-    level: StagehandClientLogLevelSchema.default("info"),
-    format: StagehandClientLogFormatSchema.default("pretty"),
+    level: StagehandClientLogLevelRuntimeSchema.default("info"),
+    format: StagehandClientLogFormatRuntimeSchema.default("pretty"),
     onLog: StagehandClientOnLogSchema.optional(),
   })
   .meta({ id: "StagehandClientLoggingConfig" });
@@ -181,7 +190,7 @@ export const StagehandClientExtractOptionsSchema = ExtractOptionsSchema.extend({
   page: z.instanceof(Page).optional(),
 }).meta({ id: "StagehandClientExtractOptions" });
 
-export const StagehandClientCreateConfigSchema = StagehandInitParamsSchema.omit({
+const StagehandClientCreateConfigRuntimeSchema = StagehandInitParamsSchema.omit({
   protocolVersion: true,
   clientInfo: true,
   browserCdpUrl: true,
@@ -189,8 +198,8 @@ export const StagehandClientCreateConfigSchema = StagehandInitParamsSchema.omit(
   browser: true,
 })
   .extend({
-    model: z.union([ModelConfigSchema, ClientLLMSchema]).optional(),
-    logging: StagehandClientLoggingConfigSchema.default({
+    model: z.union([ModelConfigSchema, ClientLLMRuntimeSchema]).optional(),
+    logging: StagehandClientLoggingConfigRuntimeSchema.default({
       level: "info",
       format: "pretty",
     }),
@@ -198,40 +207,75 @@ export const StagehandClientCreateConfigSchema = StagehandInitParamsSchema.omit(
   .strict()
   .meta({ id: "StagehandClientCreateConfig" });
 
-export const StagehandBrowserSchema = z
+const StagehandBrowserRuntimeSchema = z
   .custom<StagehandBrowser>(
     isStagehandBrowser,
     "browser must be created by localBrowser or browserbase",
   )
   .meta({ id: "StagehandBrowser" });
 
-export const StagehandCreateOptionsSchema = StagehandClientCreateConfigSchema.extend({
-  browser: StagehandBrowserSchema,
+const StagehandCreateOptionsRuntimeSchema = StagehandClientCreateConfigRuntimeSchema.extend({
+  browser: StagehandBrowserRuntimeSchema,
 }).meta({ id: "StagehandCreateOptions" });
 
-export type ClientLLM = z.infer<typeof ClientLLMSchema>;
-export type StagehandClientLoggingConfig = z.input<typeof StagehandClientLoggingConfigSchema>;
+export type ClientLLM = z.output<typeof ClientLLMRuntimeSchema>;
+export type StagehandClientLoggingConfig = z.input<
+  typeof StagehandClientLoggingConfigRuntimeSchema
+>;
 export type ResolvedStagehandClientLoggingConfig = z.output<
-  typeof StagehandClientLoggingConfigSchema
+  typeof StagehandClientLoggingConfigRuntimeSchema
 >;
 export type StagehandClientActOptions = z.input<typeof StagehandClientActOptionsSchema>;
 export type StagehandClientObserveOptions = z.input<typeof StagehandClientObserveOptionsSchema>;
 export type StagehandClientExtractOptions = z.input<typeof StagehandClientExtractOptionsSchema>;
-export type LocalBrowserLaunchOptions = z.infer<typeof LocalBrowserLaunchOptionsSchema>;
-export type LocalBrowserConnectOptions = z.infer<typeof LocalBrowserConnectOptionsSchema>;
-export type BrowserbaseLaunchOptions = z.input<typeof BrowserbaseLaunchOptionsSchema>;
-export type BrowserbaseConnectOptions = z.input<typeof BrowserbaseConnectOptionsSchema>;
-export type BrowserbaseSessionCreateResult = z.infer<typeof BrowserbaseSessionCreateResultSchema>;
-export type BrowserbaseSessionRetrieveResult = z.infer<
+export type LocalBrowserLaunchOptions = z.output<typeof LocalBrowserLaunchOptionsRuntimeSchema>;
+export type LocalBrowserConnectOptions = z.output<typeof LocalBrowserConnectOptionsRuntimeSchema>;
+export type BrowserbaseLaunchOptions = BrowserbaseLaunchOptionsInput;
+export type BrowserbaseConnectOptions = z.input<typeof BrowserbaseConnectOptionsRuntimeSchema>;
+export type BrowserbaseSessionCreateResult = z.output<typeof BrowserbaseSessionCreateResultSchema>;
+export type BrowserbaseSessionRetrieveResult = z.output<
   typeof BrowserbaseSessionRetrieveResultSchema
 >;
-export type BrowserbaseSessionConnection = z.infer<typeof BrowserbaseSessionConnectionSchema>;
-export type StagehandClientCreateConfig = z.input<typeof StagehandClientCreateConfigSchema>;
+export type BrowserbaseSessionConnection = z.output<typeof BrowserbaseSessionConnectionSchema>;
+export type StagehandClientCreateConfig = z.input<typeof StagehandClientCreateConfigRuntimeSchema>;
 export type ResolvedStagehandClientCreateConfig = z.output<
-  typeof StagehandClientCreateConfigSchema
+  typeof StagehandClientCreateConfigRuntimeSchema
 >;
-export type StagehandCreateOptions = z.input<typeof StagehandCreateOptionsSchema>;
-export type ResolvedStagehandCreateOptions = z.output<typeof StagehandCreateOptionsSchema>;
-export type WebMCPToolsOptions = z.infer<typeof WebMCPToolsOptionsSchema>;
-export type WebMCPInvokeOptions = z.infer<typeof WebMCPInvokeOptionsSchema>;
-export type WebMCPResultOptions = z.infer<typeof WebMCPResultOptionsSchema>;
+export type StagehandCreateOptions = z.input<typeof StagehandCreateOptionsRuntimeSchema>;
+export type ResolvedStagehandCreateOptions = z.output<typeof StagehandCreateOptionsRuntimeSchema>;
+export type WebMCPToolsOptions = z.output<typeof WebMCPToolsOptionsRuntimeSchema>;
+export type WebMCPInvokeOptions = z.output<typeof WebMCPInvokeOptionsRuntimeSchema>;
+export type WebMCPResultOptions = z.output<typeof WebMCPResultOptionsRuntimeSchema>;
+
+/** Internal structural metadata used by cross-language parity tests; not exported by the SDK. */
+export const clientSchemaInternals = {
+  BrowserbaseConnectOptionsSchema: BrowserbaseConnectOptionsRuntimeSchema,
+  BrowserbaseLaunchOptionsSchema: BrowserbaseLaunchOptionsRuntimeSchema,
+  ClientLLMSchema: ClientLLMRuntimeSchema,
+  LocalBrowserConnectOptionsSchema: LocalBrowserConnectOptionsRuntimeSchema,
+  LocalBrowserLaunchOptionsSchema: LocalBrowserLaunchOptionsRuntimeSchema,
+  StagehandBrowserSchema: StagehandBrowserRuntimeSchema,
+  StagehandClientCreateConfigSchema: StagehandClientCreateConfigRuntimeSchema,
+  StagehandClientLogFormatSchema: StagehandClientLogFormatRuntimeSchema,
+  StagehandClientLoggingConfigSchema: StagehandClientLoggingConfigRuntimeSchema,
+  StagehandClientLogLevelSchema: StagehandClientLogLevelRuntimeSchema,
+  StagehandCreateOptionsSchema: StagehandCreateOptionsRuntimeSchema,
+  WebMCPInvokeOptionsSchema: WebMCPInvokeOptionsRuntimeSchema,
+  WebMCPResultOptionsSchema: WebMCPResultOptionsRuntimeSchema,
+  WebMCPToolsOptionsSchema: WebMCPToolsOptionsRuntimeSchema,
+} as const;
+
+export const LocalBrowserLaunchOptionsSchema = LocalBrowserLaunchOptionsRuntimeSchema;
+export const LocalBrowserConnectOptionsSchema = LocalBrowserConnectOptionsRuntimeSchema;
+export const BrowserbaseLaunchOptionsSchema = BrowserbaseLaunchOptionsRuntimeSchema;
+export const BrowserbaseConnectOptionsSchema = BrowserbaseConnectOptionsRuntimeSchema;
+export const WebMCPToolsOptionsSchema = WebMCPToolsOptionsRuntimeSchema;
+export const WebMCPInvokeOptionsSchema = WebMCPInvokeOptionsRuntimeSchema;
+export const WebMCPResultOptionsSchema = WebMCPResultOptionsRuntimeSchema;
+export const ClientLLMSchema = ClientLLMRuntimeSchema;
+export const StagehandClientLogLevelSchema = StagehandClientLogLevelRuntimeSchema;
+export const StagehandClientLogFormatSchema = StagehandClientLogFormatRuntimeSchema;
+export const StagehandClientLoggingConfigSchema = StagehandClientLoggingConfigRuntimeSchema;
+export const StagehandClientCreateConfigSchema = StagehandClientCreateConfigRuntimeSchema;
+export const StagehandBrowserSchema = StagehandBrowserRuntimeSchema;
+export const StagehandCreateOptionsSchema = StagehandCreateOptionsRuntimeSchema;

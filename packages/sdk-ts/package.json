@@ -45,13 +45,23 @@
     "@browserbasehq/sdk": "catalog:",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/core": "catalog:",
+    "@standard-schema/spec": "catalog:",
     "chrome-launcher": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@valibot/to-json-schema": "catalog:",
+    "@valibot/to-json-schema15": "npm:@valibot/to-json-schema@1.5.0",
+    "arktype": "catalog:",
+    "arktype2128": "npm:arktype@2.1.28",
     "publint": "catalog:",
     "tsdown": "catalog:",
-    "vitest": "catalog:"
+    "valibot": "catalog:",
+    "valibot12": "npm:valibot@1.2.0",
+    "vitest": "catalog:",
+    "zod3": "npm:zod@3.25.76",
+    "zod41": "npm:zod@4.1.8",
+    "zod42": "npm:zod@4.2.0"
   },
   "engines": {
     "node": ">=22.18.0"

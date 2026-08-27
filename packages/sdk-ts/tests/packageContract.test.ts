@@ -42,6 +42,46 @@ describe("published TypeScript SDK", () => {
       await execFileAsync("pnpm", ["install", "--prefer-offline", "--ignore-scripts"], {
         cwd: consumerDirectory,
       });
+      const installedPackage = path.join(
+        consumerDirectory,
+        "node_modules",
+        "@browserbasehq",
+        "stagehand",
+      );
+      const publishedManifest = JSON.parse(
+        await readFile(path.join(installedPackage, "package.json"), "utf8"),
+      ) as { dependencies?: Record<string, string> };
+      const runtimeBundle = await readFile(path.join(installedPackage, "dist/index.mjs"), "utf8");
+      const declarations = await readFile(path.join(installedPackage, "dist/index.d.mts"), "utf8");
+      const extensionBundle = await readFile(
+        path.join(installedPackage, "dist/extension/service-worker.js"),
+        "utf8",
+      );
+      const zodRuntimeImport = /(?:from\s*|import\s*)["']zod(?:\/[^"']*)?["']|require\(["']zod/u;
+
+      expect(publishedManifest.dependencies?.zod).toBe("4.4.3");
+      expect(publishedManifest.dependencies?.["@standard-schema/spec"]).toBeDefined();
+      expect(publishedManifest.dependencies).not.toHaveProperty("typebox");
+      expect(publishedManifest.dependencies).not.toHaveProperty("@cfworker/json-schema");
+      expect(runtimeBundle).toMatch(zodRuntimeImport);
+      expect(runtimeBundle).not.toMatch(/typebox|runtime-schema|@cfworker\/json-schema/u);
+      expect(declarations).toMatch(/from\s+["']zod(?:\/[^"']*)?["']/u);
+      expect(declarations).toMatch(/from\s+["']@standard-schema\/spec["']/u);
+      expect(declarations).not.toMatch(/from\s+["']typebox(?:\/[^"']*)?["']/u);
+      expect(declarations).not.toMatch(/runtime-schema|@cfworker\/json-schema/u);
+      expect(extensionBundle).not.toMatch(/typebox|runtime-schema|fromJSONSchema/u);
+      expect(extensionBundle).toContain("@cfworker/json-schema");
+      expect(declarations).toMatch(/declare const LocalBrowserConnectOptionsSchema: z\.ZodObject/u);
+
+      const { stdout: productionList } = await execFileAsync(
+        "pnpm",
+        ["list", "zod", "--prod", "--depth", "Infinity", "--json"],
+        { cwd: consumerDirectory },
+      );
+      const listed = JSON.parse(productionList) as Array<{
+        dependencies?: Record<string, unknown>;
+      }>;
+      expect(JSON.stringify(listed)).toContain('"zod"');
       await writeFile(
         path.join(consumerDirectory, "verify.mjs"),
         `
@@ -74,6 +114,11 @@ describe("published TypeScript SDK", () => {
               throw new Error("browserbase export is unavailable");
             }
             LocalBrowserConnectOptionsSchema.parse({ cdpUrl: "ws://127.0.0.1:9222" });
+            LocalBrowserConnectOptionsSchema.shape.cdpUrl.parse("ws://127.0.0.1:9222");
+            LocalBrowserConnectOptionsSchema.extend({ label: LocalBrowserConnectOptionsSchema.shape.cdpUrl });
+            LocalBrowserConnectOptionsSchema.pick({ cdpUrl: true }).safeParse({
+              cdpUrl: "ws://127.0.0.1:9222",
+            });
             BrowserbaseConnectOptionsSchema.parse({ apiKey: "bb_key", sessionId: "session_123" });
             if (typeof WebMCPTool !== "function") throw new Error("WebMCPTool export is unavailable");
             if (typeof WebMCPInvocation !== "function") {
@@ -93,6 +138,8 @@ describe("published TypeScript SDK", () => {
         `
           import type {
             Caching,
+            ExtractMetadata,
+            ExtractResult,
             LoadState,
             LocatorCentroidResult,
             LocatorClickOptions,
@@ -119,8 +166,10 @@ describe("published TypeScript SDK", () => {
             StagehandClientExtractOptions,
             StagehandClientObserveOptions,
             StagehandResultUsage,
+            StagehandSchema,
             Variables,
           } from "@browserbasehq/stagehand";
+          import { Stagehand } from "@browserbasehq/stagehand";
 
           const loadState: LoadState = "domcontentloaded";
           const mouseButton: MouseButton = "left";
@@ -153,6 +202,11 @@ describe("published TypeScript SDK", () => {
           declare const centroid: LocatorCentroidResult;
           declare const snapshot: SnapshotResult;
           declare const usage: StagehandResultUsage;
+          declare const extractMetadata: ExtractMetadata;
+          declare const stagehand: Stagehand;
+          declare const nativeSchema: StagehandSchema<string, number>;
+
+          const nativeResult: Promise<ExtractResult<number>> = stagehand.extract("length", nativeSchema);
 
           void [
             clip,
@@ -175,6 +229,8 @@ describe("published TypeScript SDK", () => {
             centroid,
             snapshot,
             usage,
+            extractMetadata,
+            nativeResult,
           ];
         `,
       );
@@ -182,22 +238,103 @@ describe("published TypeScript SDK", () => {
       await execFileAsync(process.execPath, [path.join(consumerDirectory, "verify.mjs")], {
         cwd: consumerDirectory,
       });
+      try {
+        await execFileAsync(
+          "pnpm",
+          [
+            "exec",
+            "tsc",
+            "--noEmit",
+            "--module",
+            "nodenext",
+            "--moduleResolution",
+            "nodenext",
+            "--target",
+            "es2022",
+            "verify.ts",
+          ],
+          { cwd: consumerDirectory },
+        );
+      } catch (error) {
+        const output = error as { stderr?: string; stdout?: string };
+        throw new Error(
+          output.stderr || output.stdout || "Consumer TypeScript compilation failed",
+          {
+            cause: error,
+          },
+        );
+      }
       await execFileAsync(
         "pnpm",
         [
-          "exec",
-          "tsc",
-          "--noEmit",
-          "--module",
-          "nodenext",
-          "--moduleResolution",
-          "nodenext",
-          "--target",
-          "es2022",
-          "verify.ts",
+          "add",
+          "--save-dev",
+          "--prefer-offline",
+          "zod@4.4.3",
+          "arktype@2.2.3",
+          "valibot@1.4.2",
+          "@valibot/to-json-schema@1.7.1",
         ],
         { cwd: consumerDirectory },
       );
+      await writeFile(
+        path.join(consumerDirectory, "verify-ecosystems.ts"),
+        `
+          import { type } from "arktype";
+          import { toStandardJsonSchema } from "@valibot/to-json-schema";
+          import * as v from "valibot";
+          import { z } from "zod/v4";
+          import {
+            LocalBrowserConnectOptionsSchema,
+            Stagehand,
+            type ExtractResult,
+          } from "@browserbasehq/stagehand";
+
+          declare const stagehand: Stagehand;
+          const zodSchema = z.object({ count: z.coerce.number() });
+          const arkSchema = type({ name: "string" });
+          const valibotSchema = toStandardJsonSchema(v.object({ active: v.boolean() }));
+          type LocalConnect = z.infer<typeof LocalBrowserConnectOptionsSchema>;
+          const localConnect: LocalConnect = { cdpUrl: "ws://127.0.0.1:9222" };
+          LocalBrowserConnectOptionsSchema.shape.cdpUrl.parse(localConnect.cdpUrl);
+          LocalBrowserConnectOptionsSchema.extend({}).pick({ cdpUrl: true }).safeParse(localConnect);
+
+          const zodResult: Promise<ExtractResult<{ count: number }>> =
+            stagehand.extract("count", zodSchema);
+          const arkResult: Promise<ExtractResult<{ name: string }>> =
+            stagehand.extract("name", arkSchema);
+          const valibotResult: Promise<ExtractResult<{ active: boolean }>> =
+            stagehand.extract("active", valibotSchema);
+
+          void [zodResult, arkResult, valibotResult, localConnect];
+        `,
+      );
+      try {
+        await execFileAsync(
+          "pnpm",
+          [
+            "exec",
+            "tsc",
+            "--noEmit",
+            "--module",
+            "nodenext",
+            "--moduleResolution",
+            "nodenext",
+            "--target",
+            "es2022",
+            "--strict",
+            "--skipLibCheck",
+            "verify-ecosystems.ts",
+          ],
+          { cwd: consumerDirectory },
+        );
+      } catch (error) {
+        const output = error as { stderr?: string; stdout?: string };
+        throw new Error(
+          output.stderr || output.stdout || "Ecosystem TypeScript compilation failed",
+          { cause: error },
+        );
+      }
       expect(
         JSON.parse(await readFile(path.join(consumerDirectory, "package.json"), "utf8")),
       ).toMatchObject({ private: true });

@@ -4,7 +4,7 @@ import * as JSONRPCSchemas from "../schemas.js";
 
 const JsonValueSchema = z.json();
 
-type JsonValue = z.infer<typeof JsonValueSchema>;
+type JsonValue = z.output<typeof JsonValueSchema>;
 type ExpectedNotification = {
   jsonrpc: "2.0";
   method: string;

@@ -10,4 +10,4 @@ export const StagehandRuntimeStateSchema = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("closed") }),
 ]);
 
-export type StagehandRuntimeState = z.infer<typeof StagehandRuntimeStateSchema>;
+export type StagehandRuntimeState = z.output<typeof StagehandRuntimeStateSchema>;

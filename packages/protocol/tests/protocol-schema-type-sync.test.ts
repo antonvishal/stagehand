@@ -37,7 +37,7 @@ describe("protocol schemas must stay in sync with protocol types", () => {
       const actual = [...typesSource.matchAll(/export type\s+(\w+)\s*=\s*([^;]+);/gs)]
         .map((match) => {
           const typeName = match[1]!;
-          const inference = match[2]!.match(/^z\.(infer|input)<\s*typeof\s+(\w+Schema)\s*>$/s);
+          const inference = match[2]!.match(/^z\.(output|input)<\s*typeof\s+(\w+Schema)\s*>$/s);
 
           expect(
             inference,
@@ -45,8 +45,8 @@ describe("protocol schemas must stay in sync with protocol types", () => {
           ).not.toBeNull();
           expect(
             inference![1],
-            `${typeName} must use z.infer for its canonical protocol type`,
-          ).toBe("infer");
+            `${typeName} must use z.output for its canonical protocol type`,
+          ).toBe("output");
 
           return [typeName, inference![2]!] as const;
         })

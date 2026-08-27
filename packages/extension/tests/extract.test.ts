@@ -5,8 +5,10 @@ import type { LLMGenerateParams, LLMGenerateResult } from "../../protocol/types.
 import type { CacheClient } from "../clients/cacheClient.js";
 import { extract } from "../inference.js";
 import { StagehandLogger } from "../logger.js";
+import { createStructuredOutputContract } from "../llm/structuredOutput.js";
 import * as cacheService from "../services/cacheService.js";
 import * as extractService from "../services/extractService.js";
+import { injectUrls } from "../utils.js";
 
 describe("extract inference", () => {
   it("runs extraction and completion metadata through structured LLM calls", async () => {
@@ -45,7 +47,7 @@ describe("extract inference", () => {
     const result = await extract({
       instruction: "Extract the page heading",
       domElements: "[0-1] heading: Example Domain",
-      schema: z.object({ heading: z.string() }),
+      schema: z.object({ heading: z.string() }).required(),
       generate,
     });
 
@@ -92,7 +94,7 @@ describe("extract inference", () => {
       extract({
         instruction: "Extract the page heading",
         domElements: "[0-1] heading: Example Domain",
-        schema: z.object({ heading: z.string() }),
+        schema: z.object({ heading: z.string() }).required(),
         generate,
       }),
     ).rejects.toThrow();
@@ -117,7 +119,7 @@ describe("extract inference", () => {
     await extract({
       instruction: "Extract the heading shown in the screenshot",
       domElements: "[0-1] heading",
-      schema: z.object({ heading: z.string() }),
+      schema: z.object({ heading: z.string() }).required(),
       generate,
       screenshot,
     });
@@ -147,8 +149,100 @@ describe("extract inference", () => {
 });
 
 describe("extract service", () => {
-  it("accepts recursive JSON Schemas sent by SDKs", () => {
-    const schema = z.fromJSONSchema({
+  it("rewrites URL fields through Draft 2020-12 traversal keywords and local references", () => {
+    const url = { type: "string", format: "uri" };
+    const schema = {
+      $defs: { url },
+      type: "object",
+      properties: {
+        direct: { $ref: "#/$defs/url" },
+        list: { type: "array", items: { $ref: "#/$defs/url" } },
+        tuple: { type: "array", prefixItems: [{ $ref: "#/$defs/url" }] },
+        conditional: {
+          type: "object",
+          if: { required: ["enabled"] },
+          // oxlint-disable-next-line unicorn/no-thenable -- Draft 2020-12 conditional keyword.
+          then: { properties: { target: { $ref: "#/$defs/url" } } },
+          else: { properties: { fallback: { $ref: "#/$defs/url" } } },
+        },
+        dependent: {
+          type: "object",
+          dependentSchemas: {
+            enabled: { properties: { target: { $ref: "#/$defs/url" } } },
+          },
+        },
+        matches: { type: "array", contains: { $ref: "#/$defs/url" } },
+      },
+      patternProperties: { "^link": { $ref: "#/$defs/url" } },
+      additionalProperties: { $ref: "#/$defs/url" },
+    };
+    const original = structuredClone(schema);
+    const [transformed, paths] = extractService.transformUrlStringsToNumericIds(schema);
+    const output = {
+      direct: "0-1",
+      list: ["0-2"],
+      tuple: ["0-3"],
+      conditional: { target: "0-4", fallback: "0-5" },
+      dependent: { target: "0-6" },
+      matches: ["0-7"],
+      linkHome: "0-8",
+      arbitrary: "0-9",
+    };
+    const mapping = Object.fromEntries(
+      Array.from({ length: 9 }, (_, index) => [
+        `0-${index + 1}`,
+        `https://example.com/${index + 1}`,
+      ]),
+    );
+
+    for (const { segments } of paths) injectUrls(output, segments, mapping);
+
+    expect(output).toStrictEqual({
+      direct: "https://example.com/1",
+      list: ["https://example.com/2"],
+      tuple: ["https://example.com/3"],
+      conditional: {
+        target: "https://example.com/4",
+        fallback: "https://example.com/5",
+      },
+      dependent: { target: "https://example.com/6" },
+      matches: ["https://example.com/7"],
+      linkHome: "https://example.com/8",
+      arbitrary: "https://example.com/9",
+    });
+    expect(schema).toStrictEqual(original);
+    expect(transformed).not.toBe(schema);
+  });
+
+  it("wraps non-object roots without relocating definitions or mutating the schema", () => {
+    const schema = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      $defs: { item: { type: "string" } },
+      type: "array",
+      items: { $ref: "#/$defs/item" },
+    };
+    const original = structuredClone(schema);
+    const wrapped = extractService.wrapRootSchema(schema, "value");
+
+    expect(wrapped).toMatchObject({
+      $defs: schema.$defs,
+      type: "object",
+      properties: {
+        value: { type: "array", items: { $ref: "#/$defs/item" } },
+      },
+      required: ["value"],
+    });
+    expect(schema).toStrictEqual(original);
+  });
+
+  it("rejects non-object roots whose identifier scope cannot be relocated safely", () => {
+    expect(() =>
+      extractService.wrapRootSchema({ $id: "https://example.com/root", type: "string" }, "value"),
+    ).toThrow(/relocation would change its reference scope/);
+  });
+
+  it("accepts recursive JSON Schemas sent by SDKs", async () => {
+    const schema = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $defs: {
         node: {
@@ -165,26 +259,23 @@ describe("extract service", () => {
         },
       },
       $ref: "#/$defs/node",
-    });
+    };
 
-    const [transformed, urlPaths] = extractService.transformUrlStringsToNumericIds(schema);
+    const [transformedJsonSchema, urlPaths] =
+      extractService.transformUrlStringsToNumericIds(schema);
+    const transformed = createStructuredOutputContract(
+      "recursive extraction",
+      transformedJsonSchema,
+    );
 
     expect(urlPaths).toStrictEqual([]);
-    expect(
-      transformed.parse({
+    await expect(
+      transformed.validate({
         value: "root",
         children: [{ value: "child", children: [] }],
       }),
-    ).toStrictEqual({
-      value: "root",
-      children: [{ value: "child", children: [] }],
-    });
-    expect(z.toJSONSchema(transformed)).toMatchObject({
-      type: "object",
-      properties: {
-        children: { items: { $ref: "#" } },
-      },
-    });
+    ).resolves.toMatchObject({ success: true });
+    expect(transformedJsonSchema).toStrictEqual(schema);
   });
 
   it("captures and forwards a screenshot through a client-provided LLM", async () => {

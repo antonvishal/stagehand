@@ -565,8 +565,8 @@ export const LLMGenerateResultSchema = z
 /**
  * Builds the result validator for a particular llm.generate request.
  *
- * Prefer the original in-memory Zod schema. When only the wire JSON Schema is
- * available, Zod can recreate an equivalent validator.
+ * Prefer an original in-memory Zod schema when one exists. Foreign wire JSON
+ * Schema validation belongs to the extension's hardened interpreter boundary.
  */
 export function createLLMGenerateResultSchema(
   params: z.output<typeof LLMGenerateParamsSchema>,
@@ -576,9 +576,7 @@ export function createLLMGenerateResultSchema(
     return LLMMessageGenerateResultSchema;
   }
 
-  const structuredContentSchema =
-    originalStructuredContentSchema ??
-    z.fromJSONSchema(params.responseFormat.schema as Parameters<typeof z.fromJSONSchema>[0]);
+  const structuredContentSchema = originalStructuredContentSchema ?? z.json();
 
   return LLMGenerateBaseResultSchema.extend({
     outputFormat: z.literal("json_schema"),
@@ -677,7 +675,7 @@ export const CacheStatusSchema = z.enum(["HIT", "MISS", "DISABLED"]).meta({ id: 
 
 /** Server-side caching configuration: a boolean toggle, or an object enabling
  * caching with an optional hit-count threshold (how many identical results
- * must be seen before the cache serves a hit; overrides the project's
+ * must be seen before the cache serves a hit; overrides the project'z
  * configured threshold). */
 export const CachingSchema = z
   .union([

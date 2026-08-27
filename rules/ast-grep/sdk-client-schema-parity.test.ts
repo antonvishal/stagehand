@@ -30,25 +30,25 @@ const intentionallyUndocumentedBrowserFields = new Set([
 const concepts: readonly Concept[] = [
   {
     name: "LocalBrowserLaunchOptions",
-    typescript: ClientSchemas.LocalBrowserLaunchOptionsSchema,
+    typescript: ClientSchemas.clientSchemaInternals.LocalBrowserLaunchOptionsSchema,
     python: () => pythonClassFields("client_types.py", "LocalBrowserLaunchOptions"),
     go: () => goStructFields("browser_factories.go", "LocalBrowserLaunchOptions"),
   },
   {
     name: "LocalBrowserConnectOptions",
-    typescript: ClientSchemas.LocalBrowserConnectOptionsSchema,
+    typescript: ClientSchemas.clientSchemaInternals.LocalBrowserConnectOptionsSchema,
     python: () => pythonClassFields("client_types.py", "LocalBrowserConnectOptions"),
     go: () => goStructFields("browser_factories.go", "LocalBrowserConnectOptions"),
   },
   {
     name: "BrowserbaseConnectOptions",
-    typescript: ClientSchemas.BrowserbaseConnectOptionsSchema,
+    typescript: ClientSchemas.clientSchemaInternals.BrowserbaseConnectOptionsSchema,
     python: () => pythonClassFields("client_types.py", "BrowserbaseConnectOptions"),
     go: () => goStructFields("browser_factories.go", "BrowserbaseConnectOptions"),
   },
   {
     name: "StagehandClientLoggingConfig",
-    typescript: ClientSchemas.StagehandClientLoggingConfigSchema,
+    typescript: ClientSchemas.clientSchemaInternals.StagehandClientLoggingConfigSchema,
     python: () => pythonClassFields("client_types.py", "StagehandClientLoggingConfig"),
     go: () => goStructFields("client_options.go", "StagehandClientLoggingConfig"),
   },
@@ -127,8 +127,12 @@ describe("SDK-owned schemas remain one cross-language contract", () => {
   });
 
   it("keeps Stagehand creation fields aligned while naming intentional language adapters", async () => {
-    const expectedConfig = schemaFields(ClientSchemas.StagehandClientCreateConfigSchema);
-    const expectedCreate = schemaFields(ClientSchemas.StagehandCreateOptionsSchema);
+    const expectedConfig = schemaFields(
+      ClientSchemas.clientSchemaInternals.StagehandClientCreateConfigSchema,
+    );
+    const expectedCreate = schemaFields(
+      ClientSchemas.clientSchemaInternals.StagehandCreateOptionsSchema,
+    );
     const [pythonConfig, pythonCreate, goCreate] = await Promise.all([
       pythonClassFields("client_models.py", "StagehandClientCreateConfig"),
       pythonMethodParameters("stagehand.py", "Stagehand", "create", [
@@ -173,7 +177,10 @@ describe("SDK-owned schemas remain one cross-language contract", () => {
       "WebMCPResultOptionsSchema",
       "WebMCPToolsOptionsSchema",
     ]);
-    const objectSchemas = Object.entries(ClientSchemas)
+    const objectSchemas = Object.entries({
+      ...ClientSchemas,
+      ...ClientSchemas.clientSchemaInternals,
+    })
       .filter(
         ([name, value]) =>
           name.endsWith("Schema") &&
@@ -194,7 +201,9 @@ describe("SDK-owned schemas remain one cross-language contract", () => {
     const source = await readFile(new URL("reference/stagehand.mdx", docsSource), "utf8");
     const pythonFields = await pythonMethodParameters("stagehand.py", "Stagehand", "create");
     const expected = {
-      TypeScript: Object.keys(ClientSchemas.StagehandCreateOptionsSchema.shape).sort(),
+      TypeScript: Object.keys(
+        ClientSchemas.clientSchemaInternals.StagehandCreateOptionsSchema.shape,
+      ).sort(),
       Python: pythonFields,
       Go: (await goStructFieldSpellings("client_options.go", "CreateOptions"))
         .map((field) => `options.${field}`)
@@ -268,7 +277,9 @@ describe("SDK-owned schemas remain one cross-language contract", () => {
         }
       }
     }
-    for (const field of Object.keys(ClientSchemas.StagehandClientLoggingConfigSchema.shape)) {
+    for (const field of Object.keys(
+      ClientSchemas.clientSchemaInternals.StagehandClientLoggingConfigSchema.shape,
+    )) {
       if (!loggingDocs.includes(field)) missing.push(`logging TypeScript ${field}`);
     }
     for (const field of await pythonClassFields(
