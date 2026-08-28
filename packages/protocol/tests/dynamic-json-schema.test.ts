@@ -9,6 +9,23 @@ import {
 } from "../dynamic-json-schema.js";
 
 describe("dynamic JSON Schema boundary", () => {
+  it("does not close additionalProperties inside const or enum values", () => {
+    const schema = validateDynamicJsonSchema({
+      type: "object",
+      const: { properties: { a: 1 } },
+      enum: [{ properties: { b: 2 } }],
+      default: { properties: { c: 3 } },
+      examples: [{ properties: { d: 4 } }],
+      properties: { name: { type: "string" } },
+    });
+
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.const).toEqual({ properties: { a: 1 } });
+    expect(schema.enum).toEqual([{ properties: { b: 2 } }]);
+    expect(schema.default).toEqual({ properties: { c: 3 } });
+    expect(schema.examples).toEqual([{ properties: { d: 4 } }]);
+  });
+
   it("accepts schemas emitted by the Python and Go SDK generators", () => {
     const fixture = (name: string) =>
       JSON.parse(

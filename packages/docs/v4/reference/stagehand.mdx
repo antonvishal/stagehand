@@ -989,6 +989,9 @@ Do not pass a TypeBox object or a raw JSON Schema document to `extract()`. Wrap 
 A schema Stagehand cannot convert throws `StagehandSchemaError` before the browser call. Data that
 fails the schema throws `StagehandValidationError`.
 
+Object schemas that omit `additionalProperties` are sent with `additionalProperties: false`. Set
+`additionalProperties: true` when extra keys should pass.
+
 </Tab>
 
 <Tab title="Python">

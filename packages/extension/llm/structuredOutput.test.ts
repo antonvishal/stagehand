@@ -20,8 +20,17 @@ describe("provider JSON Schema isolation", () => {
 
     (first.properties as Record<string, unknown>).name = { type: "number" };
 
-    expect(second).toStrictEqual(canonical);
-    expect(canonical.properties.name).toStrictEqual({ type: "string" });
+    expect(canonical).toStrictEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+    });
+    expect(second).toStrictEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
     expect(first).not.toBe(second);
   });
 

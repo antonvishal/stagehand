@@ -26,6 +26,8 @@ describe("extract schema boundary", () => {
   it("types ExtractResult from the schema object", () => {
     const schema = z.object({ count: z.coerce.number() });
     expectTypeOf<ExtractResult<typeof schema>["data"]>().toEqualTypeOf<{ count: number }>();
+    expectTypeOf<ExtractResult<StagehandSchema<string, number>>["data"]>().toEqualTypeOf<number>();
+    expectTypeOf<ExtractResult<number>["data"]>().toEqualTypeOf<number>();
   });
 
   it("accepts complete JSON Schema documents", () => {
@@ -161,7 +163,6 @@ describe("extract schema boundary", () => {
         page: { default: 1, type: "number" },
       },
       required: ["length"],
-      additionalProperties: false,
     });
     await expect(resolved.validate({ length: "hello" })).resolves.toEqual({
       length: 5,
@@ -182,7 +183,6 @@ describe("extract schema boundary", () => {
         title: { type: "string", description: "the main headline of the article" },
         email: { type: "string", format: "email" },
       },
-      additionalProperties: false,
     });
   });
 
@@ -222,7 +222,6 @@ describe("extract schema boundary", () => {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       required: ["name"],
-      additionalProperties: false,
     });
     await expect(resolved.validate({ name: "widget", quantity: 2 })).resolves.toEqual({
       name: "widget",
@@ -351,7 +350,7 @@ describe("extract schema boundary", () => {
 
   it("rejects Zod versions without native dual-standard support", () => {
     expect(() => resolveExtractSchema(zod3.object({ name: zod3.string() }))).toThrow(
-      /Zod 4\.5\.0 or newer/,
+      /Zod 4\.2\.0 or newer/,
     );
   });
 

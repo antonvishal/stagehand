@@ -1,23 +1,25 @@
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v4";
-import { closeUnspecifiedObjectAdditionalProperties } from "../../protocol/dynamic-json-schema-types.js";
+import { isJsonObject, type JsonValue } from "../../protocol/dynamic-json-schema-types.js";
 
 export type { StandardJSONSchemaV1, StandardSchemaV1 };
 
 /** A JSON object passed to jsonSchema(). The extension hardens Draft 2020-12 before interpretation. */
-export type JsonSchemaDocument = { readonly [key: string]: unknown };
+export type JsonSchemaDocument = { readonly [key: string]: JsonValue };
 
 /** A schema that validates values and describes its accepted input as JSON Schema. */
 export type StagehandSchema<Input = unknown, Output = Input> =
   | (StandardSchemaV1<Input, Output> & StandardJSONSchemaV1<Input, Output>)
   | z.ZodType<Output, Input>;
 
-export type StagehandSchemaOutput<Schema extends StagehandSchema> =
-  Schema extends z.ZodType<infer Output, unknown>
-    ? Output
-    : Schema extends StandardSchemaV1
-      ? StandardSchemaV1.InferOutput<Schema>
-      : never;
+export type StagehandSchemaOutput<Schema extends StagehandSchema> = ExtractSchemaData<Schema>;
+
+/** Output data carried by extract() for a schema or a bare data type. */
+export type ExtractSchemaData<T> = T extends z.ZodType<infer Output, infer _In>
+  ? Output
+  : T extends StandardSchemaV1<infer _In, infer Out>
+    ? Out
+    : T;
 
 export class StagehandValidationError extends TypeError {
   readonly issues: readonly StandardSchemaV1.Issue[];
@@ -66,9 +68,10 @@ const RAW_SCHEMA_VENDOR = "stagehand-json-schema";
 /**
  * Adapts a complete Draft 2020-12 document for extraction.
  * The generic supplies a static type; Stagehand cannot infer it from JSON Schema.
+ * The object input permits schema-library metadata; cloning enforces the JSON-safe boundary.
  * The extension hardens and interprets the document; this helper does not validate values.
  */
-export function jsonSchema<T = unknown>(document: JsonSchemaDocument): StagehandSchema<T, T> {
+export function jsonSchema<T = unknown>(document: object): StagehandSchema<T, T> {
   const stored = cloneJsonDocument(document, RAW_SCHEMA_VENDOR);
   const convert = (options: StandardJSONSchemaV1.Options): Record<string, unknown> => {
     if (options.target !== JSON_SCHEMA_TARGET) {
@@ -102,6 +105,12 @@ export function standardSchemaToJsonSchema(
     throw new StagehandSchemaError("Schema must implement Standard Schema version 1.", { vendor });
   }
   if (!vendor) throw new StagehandSchemaError("Schema must provide a Standard Schema vendor name.");
+  if (typeof standard.validate !== "function") {
+    throw new StagehandSchemaError(
+      "Schema does not provide Standard Schema V1 validation through ~standard.validate().",
+      { vendor },
+    );
+  }
   if (!hasJsonSchemaConverters(standard.jsonSchema)) {
     throw new StagehandSchemaError(
       `Schema does not provide both Standard JSON Schema V1 input and output converters.${converterGuidance(vendor)}`,
@@ -144,7 +153,7 @@ export function resolveExtractSchema(value: unknown): ResolvedExtractSchema;
 export function resolveExtractSchema(value: unknown): ResolvedExtractSchema {
   const standard = standardProperties(value);
   if (!standard) {
-    const guidance = isPlainObject(value)
+    const guidance = isJsonObject(value)
       ? " Use jsonSchema() for raw Draft 2020-12 schemas."
       : "";
     throw new StagehandSchemaError(
@@ -157,26 +166,6 @@ export function resolveExtractSchema(value: unknown): ResolvedExtractSchema {
     throw new StagehandSchemaError("Schema must implement Standard Schema version 1.", { vendor });
   }
   if (!vendor) throw new StagehandSchemaError("Schema must provide a Standard Schema vendor name.");
-  if (typeof standard.validate !== "function") {
-    throw new StagehandSchemaError(
-      "Schema does not provide Standard Schema V1 validation through ~standard.validate().",
-      { vendor },
-    );
-  }
-
-  if (isZod4Schema(value, vendor) && !hasJsonSchemaConverters(standard.jsonSchema)) {
-    return {
-      jsonSchema: zodInputJsonSchema(value, vendor),
-      validate: (candidate) => validateStandardSchema(value, candidate),
-    };
-  }
-
-  if (!hasJsonSchemaConverters(standard.jsonSchema)) {
-    throw new StagehandSchemaError(
-      `Schema does not provide both Standard JSON Schema V1 input and output converters.${converterGuidance(vendor)}`,
-      { target: JSON_SCHEMA_TARGET, vendor },
-    );
-  }
 
   const schema = value as StandardSchemaV1 & StandardJSONSchemaV1;
   return {
@@ -195,43 +184,21 @@ interface StandardProperties {
 function standardProperties(value: unknown): StandardProperties | undefined {
   if (!isRecordLike(value)) return undefined;
   const standard = value["~standard"];
-  return isPlainObject(standard) ? standard : undefined;
+  return isJsonObject(standard) ? standard : undefined;
 }
 
 function hasJsonSchemaConverters(value: unknown): value is StandardJSONSchemaV1.Converter {
   return (
-    isPlainObject(value) && typeof value.input === "function" && typeof value.output === "function"
+    isJsonObject(value) && typeof value.input === "function" && typeof value.output === "function"
   );
 }
 
-function isZod4Schema(value: unknown, vendor: string | undefined): value is z.ZodType {
-  return vendor === "zod" && isRecordLike(value) && "_zod" in value;
-}
-
-function zodInputJsonSchema(schema: z.ZodType, vendor: string): JsonSchemaDocument {
-  let converted: unknown;
-  try {
-    converted = z.toJSONSchema(schema, {
-      io: "input",
-      target: JSON_SCHEMA_TARGET,
-    });
-  } catch (cause) {
-    throw new StagehandSchemaError(
-      `Zod could not generate the required JSON Schema target "${JSON_SCHEMA_TARGET}".`,
-      { cause, target: JSON_SCHEMA_TARGET, vendor },
-    );
-  }
-  return providerJsonSchema(converted, vendor);
-}
-
 function providerJsonSchema(value: unknown, vendor: string): JsonSchemaDocument {
-  const document = cloneJsonDocument(value, vendor);
-  closeUnspecifiedObjectAdditionalProperties(document);
-  return document;
+  return cloneJsonDocument(value, vendor);
 }
 
 function cloneJsonDocument(value: unknown, vendor: string): JsonSchemaDocument {
-  if (!isPlainObject(value)) {
+  if (!isJsonObject(value)) {
     throw new StagehandSchemaError("JSON Schema conversion must return an object.", { vendor });
   }
   try {
@@ -253,10 +220,6 @@ function converterGuidance(vendor: string | undefined): string {
     return " Apply both Schema.toStandardSchemaV1() and Schema.toStandardJSONSchemaV1().";
   }
   return " Upgrade the schema library or use its official Standard JSON Schema adapter.";
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isRecordLike(value: unknown): value is Record<PropertyKey, unknown> {

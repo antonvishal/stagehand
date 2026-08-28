@@ -52,7 +52,7 @@
   "devDependencies": {
     "@valibot/to-json-schema": "catalog:",
     "arktype": "catalog:",
-    "effect": "catalog:",
+    "effect": "4.0.0-rc.112",
     "publint": "catalog:",
     "tsdown": "catalog:",
     "typebox": "catalog:",

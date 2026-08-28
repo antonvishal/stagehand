@@ -198,7 +198,7 @@ describe("extract service", () => {
       list: ["0-2"],
       tuple: ["0-3"],
       conditional: { target: "0-4", fallback: "0-5" },
-      dependent: { target: "0-6" },
+      dependent: { enabled: true, target: "0-6" },
       matches: ["0-7"],
       linkHome: "0-8",
       arbitrary: "0-9",
@@ -210,26 +210,38 @@ describe("extract service", () => {
       ]),
     );
 
-    contract.restoreUrls(output, mapping);
+    const restored = contract.restoreUrls(output, mapping);
+    const originalOutput = {
+      direct: "0-1",
+      list: ["0-2"],
+      tuple: ["0-3"],
+      conditional: { target: "0-4", fallback: "0-5" },
+      dependent: { enabled: true, target: "0-6" },
+      matches: ["0-7"],
+      linkHome: "0-8",
+      arbitrary: "0-9",
+    };
 
-    expect(output).toStrictEqual({
+    expect(output).toStrictEqual(originalOutput);
+    expect(restored).toStrictEqual({
       direct: "https://example.com/1",
       list: ["https://example.com/2"],
       tuple: ["https://example.com/3"],
       conditional: {
-        target: "0-4",
-        fallback: "0-5",
+        target: "https://example.com/4",
+        fallback: "https://example.com/5",
       },
-      dependent: { target: "0-6" },
-      matches: ["0-7"],
+      dependent: { enabled: true, target: "https://example.com/6" },
+      matches: ["https://example.com/7"],
       linkHome: "https://example.com/8",
       arbitrary: "https://example.com/9",
     });
     expect(schema).toStrictEqual(original);
     expect(contract.jsonSchema).not.toBe(schema);
     expect(contract.jsonSchema).toMatchObject({
+      $defs: { url: { type: "string", pattern: "^\\d+-\\d+$" } },
       properties: {
-        direct: { type: "string", pattern: "^\\d+-\\d+$" },
+        direct: { $ref: "#/$defs/url" },
         conditional: {
           // oxlint-disable-next-line unicorn/no-thenable -- Draft 2020-12 conditional keyword.
           then: { properties: { target: { $ref: "#/$defs/url" } } },
@@ -245,8 +257,8 @@ describe("extract service", () => {
     });
 
     const missing = { direct: "0-404" };
-    contract.restoreUrls(missing, mapping);
-    expect(missing).toStrictEqual({ direct: "" });
+    expect(contract.restoreUrls(missing, mapping)).toStrictEqual({ direct: "" });
+    expect(missing).toStrictEqual({ direct: "0-404" });
   });
 
   it("wraps non-object roots with relocated definitions and without mutation", () => {
@@ -356,6 +368,7 @@ describe("extract service", () => {
         ],
       },
     });
+    expect(output.value.url).toBe("0-1");
     expect(
       createStructuredOutputContract("recursive URLs", wrapped).validate(restored),
     ).toMatchObject({ value: restored });

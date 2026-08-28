@@ -4,7 +4,12 @@ import {
   resolveLocalJsonPointer,
   type DynamicJsonSchema,
 } from "../../protocol/dynamic-json-schema.js";
-import { forEachDynamicJsonSubschema } from "../../protocol/dynamic-json-schema-references.js";
+import {
+  ARRAY_OF_SCHEMAS,
+  MAP_OF_SCHEMAS,
+  SINGLE_SCHEMA,
+  mapDynamicJsonSubschemas,
+} from "../../protocol/dynamic-json-schema-references.js";
 
 const ID_PATTERN = /^\d+-\d+$/u;
 const ID_PATTERN_SOURCE = "^\\d+-\\d+$";
@@ -21,12 +26,18 @@ export function createUrlAwareExtractionSchema(
 ): UrlAwareExtractionSchema {
   const canonicalSchema = schema;
   const providerSchema = structuredClone(canonicalSchema);
-  rewriteUrlSchemas(providerSchema, providerSchema, new WeakSet());
+  const rewritten = rewriteUrlSchemas(providerSchema, providerSchema, new WeakSet());
 
   return {
-    jsonSchema: providerSchema,
+    jsonSchema: isJsonObject(rewritten) ? (rewritten as DynamicJsonSchema) : providerSchema,
     restoreUrls: (value, idToUrl) =>
-      restoreSchemaValue(canonicalSchema, canonicalSchema, value, idToUrl, new Map()),
+      restoreSchemaValue(
+        canonicalSchema,
+        canonicalSchema,
+        structuredClone(value),
+        idToUrl,
+        new Map(),
+      ),
   };
 }
 
@@ -34,28 +45,19 @@ function rewriteUrlSchemas(
   root: DynamicJsonSchema,
   schema: unknown,
   visited: WeakSet<object>,
-): void {
-  if (typeof schema === "boolean" || !isJsonObject(schema) || visited.has(schema)) return;
+): unknown {
+  if (typeof schema === "boolean" || !isJsonObject(schema) || visited.has(schema)) return schema;
   visited.add(schema);
 
   if (typeof schema.$ref === "string") {
     const target = resolveLocalJsonPointer(root, schema.$ref);
-    if (isUrlSchema(target)) {
-      rewriteUrlSchema(schema, target);
-      return;
-    }
+    if (isUrlSchema(target)) return rewrittenUrlSchema(target);
     rewriteUrlSchemas(root, target, visited);
   }
-  if (isUrlSchema(schema)) {
-    rewriteUrlSchema(schema, schema);
-    return;
-  }
+  if (isUrlSchema(schema)) return rewrittenUrlSchema(schema);
 
-  forEachDynamicJsonSubschema(
-    schema,
-    (child) => rewriteUrlSchemas(root, child, visited),
-    "structural",
-  );
+  mapDynamicJsonSubschemas(schema, (child) => rewriteUrlSchemas(root, child, visited));
+  return schema;
 }
 
 function isUrlSchema(schema: unknown): schema is Record<string, unknown> {
@@ -67,21 +69,17 @@ function isUrlSchema(schema: unknown): schema is Record<string, unknown> {
   );
 }
 
-function rewriteUrlSchema(
-  destination: Record<string, unknown>,
-  source: Record<string, unknown>,
-): void {
+function rewrittenUrlSchema(source: Record<string, unknown>): Record<string, unknown> {
   const description = typeof source.description === "string" ? source.description.trim() : "";
   const base =
     "This field must be the element-ID in the form 'frameId-backendId' " + '(e.g. "0-432").';
-  for (const key of Object.keys(destination)) delete destination[key];
-  Object.assign(destination, {
+  return {
     type: "string",
     pattern: ID_PATTERN_SOURCE,
     description: description
       ? `${base} that follows this user-defined description: ${description}`
       : base,
-  });
+  };
 }
 
 function restoreSchemaValue(
@@ -118,71 +116,95 @@ function restoreSchemaValue(
       return id === undefined ? value : (idToUrl[id] ?? "");
     }
 
+    const restore = (childSchema: unknown, childValue: unknown) =>
+      restoreSchemaValue(root, childSchema, childValue, idToUrl, activePairs);
+
     if (isJsonObject(value)) {
       const evaluatedKeys = new Set<string>();
-      const properties = schema.properties;
-      if (isJsonObject(properties)) {
-        for (const [key, childSchema] of Object.entries(properties)) {
-          if (Object.hasOwn(value, key)) {
-            evaluatedKeys.add(key);
-            value[key] = restoreSchemaValue(root, childSchema, value[key], idToUrl, activePairs);
+      for (const keyword of MAP_OF_SCHEMAS) {
+        const schemas = schema[keyword];
+        if (!isJsonObject(schemas)) continue;
+        if (keyword === "$defs" || keyword === "definitions") continue;
+        if (keyword === "dependentSchemas") {
+          for (const [key, childSchema] of Object.entries(schemas)) {
+            if (Object.hasOwn(value, key)) value = restore(childSchema, value) as typeof value;
           }
+          continue;
         }
-      }
-      const patternProperties = schema.patternProperties;
-      if (isJsonObject(patternProperties)) {
-        for (const [pattern, childSchema] of Object.entries(patternProperties)) {
-          const regex = new RegExp(pattern, "u");
-          for (const key of Object.keys(value)) {
-            if (regex.test(key)) {
+        if (keyword === "patternProperties") {
+          for (const [pattern, childSchema] of Object.entries(schemas)) {
+            const regex = new RegExp(pattern, "u");
+            for (const key of Object.keys(value)) {
+              if (!regex.test(key)) continue;
               evaluatedKeys.add(key);
-              value[key] = restoreSchemaValue(root, childSchema, value[key], idToUrl, activePairs);
+              value[key] = restore(childSchema, value[key]);
             }
           }
+          continue;
+        }
+        for (const [key, childSchema] of Object.entries(schemas)) {
+          if (!Object.hasOwn(value, key)) continue;
+          evaluatedKeys.add(key);
+          value[key] = restore(childSchema, value[key]);
         }
       }
-      const additionalProperties = schema.additionalProperties;
-      if (isJsonObject(additionalProperties)) {
+      for (const keyword of ["additionalProperties", "unevaluatedProperties"] as const) {
+        const childSchema = schema[keyword];
+        if (!isJsonObject(childSchema)) continue;
         for (const key of Object.keys(value)) {
           if (evaluatedKeys.has(key)) continue;
-          value[key] = restoreSchemaValue(
-            root,
-            additionalProperties,
-            value[key],
-            idToUrl,
-            activePairs,
-          );
+          value[key] = restore(childSchema, value[key]);
           evaluatedKeys.add(key);
         }
       }
     }
 
     if (Array.isArray(value)) {
-      if (Array.isArray(schema.prefixItems)) {
-        for (let index = 0; index < Math.min(value.length, schema.prefixItems.length); index += 1) {
-          value[index] = restoreSchemaValue(
-            root,
-            schema.prefixItems[index],
-            value[index],
-            idToUrl,
-            activePairs,
-          );
+      let prefixLength = 0;
+      for (const keyword of ARRAY_OF_SCHEMAS) {
+        const schemas = schema[keyword];
+        if (keyword !== "prefixItems" || !Array.isArray(schemas)) continue;
+        prefixLength = schemas.length;
+        for (let index = 0; index < Math.min(value.length, schemas.length); index += 1) {
+          value[index] = restore(schemas[index], value[index]);
         }
       }
-      if (isJsonObject(schema.items)) {
-        const start = Array.isArray(schema.prefixItems) ? schema.prefixItems.length : 0;
-        for (let index = start; index < value.length; index += 1) {
-          value[index] = restoreSchemaValue(root, schema.items, value[index], idToUrl, activePairs);
+      for (const keyword of ["items", "additionalItems", "unevaluatedItems"] as const) {
+        const childSchema = schema[keyword];
+        if (!isJsonObject(childSchema)) continue;
+        for (let index = prefixLength; index < value.length; index += 1) {
+          value[index] = restore(childSchema, value[index]);
+        }
+      }
+      if (isJsonObject(schema.contains)) {
+        for (let index = 0; index < value.length; index += 1) {
+          value[index] = restore(schema.contains, value[index]);
         }
       }
     }
 
-    for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+    for (const keyword of ARRAY_OF_SCHEMAS) {
+      if (keyword === "prefixItems") continue;
       const schemas = schema[keyword];
       if (!Array.isArray(schemas)) continue;
-      for (const childSchema of schemas) {
-        value = restoreSchemaValue(root, childSchema, value, idToUrl, activePairs);
+      for (const childSchema of schemas) value = restore(childSchema, value);
+    }
+    for (const keyword of SINGLE_SCHEMA) {
+      if (
+        keyword === "additionalItems" ||
+        keyword === "additionalProperties" ||
+        keyword === "contains" ||
+        keyword === "contentSchema" ||
+        keyword === "items" ||
+        keyword === "not" ||
+        keyword === "propertyNames" ||
+        keyword === "unevaluatedItems" ||
+        keyword === "unevaluatedProperties"
+      ) {
+        continue;
       }
+      if (!Object.hasOwn(schema, keyword)) continue;
+      value = restore(schema[keyword], value);
     }
     return value;
   } finally {

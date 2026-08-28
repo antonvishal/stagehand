@@ -9,7 +9,6 @@ catalog:
   "@standard-schema/spec": 1.1.0
   "@cfworker/json-schema": 4.1.1
   arktype: 2.2.3
-  effect: 4.0.0-rc.112
   valibot: 1.4.2
   "@modelcontextprotocol/sdk": 1.29.0
   "@ast-grep/lang-go": 0.0.6

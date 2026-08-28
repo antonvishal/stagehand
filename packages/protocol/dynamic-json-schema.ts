@@ -9,6 +9,8 @@ import type { DynamicJsonSchema } from "./dynamic-json-schema-types.js";
 
 export { assertDynamicValidationWork } from "./dynamic-json-schema-budget.js";
 export {
+  closeUnspecifiedObjectAdditionalProperties,
+  mapDynamicJsonSubschemas,
   relocateDynamicJsonSchemaReferences,
   resolveLocalJsonPointer,
 } from "./dynamic-json-schema-references.js";
@@ -20,11 +22,7 @@ export type {
   DynamicJsonSchemaValidator,
   JsonValue,
 } from "./dynamic-json-schema-types.js";
-export {
-  closeUnspecifiedObjectAdditionalProperties,
-  DynamicJsonSchemaError,
-  isJsonObject,
-} from "./dynamic-json-schema-types.js";
+export { DynamicJsonSchemaError, isJsonObject } from "./dynamic-json-schema-types.js";
 
 /** Builds one bounded, CSP-safe validator over an isolated canonical schema. */
 export function createDynamicJsonSchemaValidator<Output = unknown>(

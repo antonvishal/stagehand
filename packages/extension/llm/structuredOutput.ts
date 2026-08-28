@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import {
-  closeUnspecifiedObjectAdditionalProperties,
   createDynamicJsonSchemaValidator,
   createDynamicJsonSchemaValidatorFromValidated,
   validateDynamicJsonSchema,
@@ -37,7 +36,6 @@ export function createZodStructuredOutputContract<Output>(
   const jsonSchema = z
     .json()
     .parse(z.toJSONSchema(schema, { io: "input", target: "draft-2020-12" }));
-  closeUnspecifiedObjectAdditionalProperties(jsonSchema);
   const hardened = validateDynamicJsonSchema(jsonSchema);
   return {
     name,

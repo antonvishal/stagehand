@@ -29,24 +29,70 @@ export const SINGLE_SCHEMA = [
 const STRUCTURAL_MAP_OF_SCHEMAS: readonly string[] = ["patternProperties", "properties"];
 const STRUCTURAL_SINGLE_SCHEMA: readonly string[] = ["additionalProperties", "items"];
 
-export function forEachDynamicJsonSubschema(
+/** Replaces each nested schema with the mapped value. */
+export function mapDynamicJsonSubschemas(
   schema: Record<string, unknown>,
-  visit: (schema: unknown) => void,
+  map: (child: unknown) => unknown,
   mode: "all" | "structural" = "all",
 ): void {
   const mapKeywords: readonly string[] =
     mode === "all" ? MAP_OF_SCHEMAS : STRUCTURAL_MAP_OF_SCHEMAS;
   for (const keyword of mapKeywords) {
     const schemas = schema[keyword];
-    if (isJsonObject(schemas)) Object.values(schemas).forEach(visit);
+    if (!isJsonObject(schemas)) continue;
+    for (const key of Object.keys(schemas)) schemas[key] = map(schemas[key]);
   }
   for (const keyword of ARRAY_OF_SCHEMAS) {
     const schemas = schema[keyword];
-    if (Array.isArray(schemas)) schemas.forEach(visit);
+    if (!Array.isArray(schemas)) continue;
+    for (let index = 0; index < schemas.length; index += 1) {
+      schemas[index] = map(schemas[index]);
+    }
   }
   const singleKeywords: readonly string[] =
     mode === "all" ? SINGLE_SCHEMA : STRUCTURAL_SINGLE_SCHEMA;
-  for (const keyword of singleKeywords) visit(schema[keyword]);
+  for (const keyword of singleKeywords) {
+    if (!Object.hasOwn(schema, keyword)) continue;
+    schema[keyword] = map(schema[keyword]);
+  }
+}
+
+export function forEachDynamicJsonSubschema(
+  schema: Record<string, unknown>,
+  visit: (schema: unknown) => void,
+  mode: "all" | "structural" = "all",
+): void {
+  mapDynamicJsonSubschemas(
+    schema,
+    (child) => {
+      visit(child);
+      return child;
+    },
+    mode,
+  );
+}
+
+/** Sets additionalProperties: false on object schema nodes that omitted it. Skips const/enum/default. */
+export function closeUnspecifiedObjectAdditionalProperties(value: unknown): void {
+  const visited = new WeakSet<object>();
+  const visit = (schema: unknown): void => {
+    if (typeof schema === "boolean" || !isJsonObject(schema) || visited.has(schema)) return;
+    visited.add(schema);
+    const typeNames =
+      typeof schema.type === "string"
+        ? [schema.type]
+        : Array.isArray(schema.type)
+          ? schema.type.filter((entry): entry is string => typeof entry === "string")
+          : [];
+    if (
+      schema.additionalProperties === undefined &&
+      (typeNames.includes("object") || schema.properties !== undefined)
+    ) {
+      schema.additionalProperties = false;
+    }
+    forEachDynamicJsonSubschema(schema, visit);
+  };
+  visit(value);
 }
 
 export function resolveLocalJsonPointer(root: Record<string, unknown>, reference: string): unknown {

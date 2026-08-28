@@ -36,7 +36,6 @@ import {
   isExtractSchemaIntent,
   resolveExtractSchema,
   type StagehandSchema,
-  type StagehandSchemaOutput,
 } from "./schema.js";
 import { STAGEHAND_SDK_CLIENT_INFO } from "./sdkIdentity.js";
 import {
@@ -54,10 +53,21 @@ type ProtocolExtractResult = import("../../protocol/types.js").ExtractResult;
 
 export type ExtractMetadata = ProtocolExtractResult["metadata"];
 
-export type ExtractResult<T = DefaultExtractData> = {
-  data: T extends StagehandSchema ? StagehandSchemaOutput<T> : T;
+type ExtractResultData<Data> = {
+  data: Data;
   metadata: ExtractMetadata;
 };
+
+// Keep this conditional at the top level so packed declarations reduce during type comparison.
+export type ExtractResult<T = DefaultExtractData> = T extends {
+  readonly "~standard": {
+    readonly types?: { readonly output: infer Output } | undefined;
+  };
+}
+  ? ExtractResultData<Output>
+  : T extends z.ZodType<infer Output, infer _In>
+    ? ExtractResultData<Output>
+    : ExtractResultData<T>;
 
 const nativeFunctionSourcePattern =
   /^\s*function(?:\s+[^()]*)?\([^)]*\)\s*\{\s*\[native code\]\s*\}\s*$/;

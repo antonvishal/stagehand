@@ -8,6 +8,7 @@ import {
 } from "./dynamic-json-schema-types.js";
 import {
   ARRAY_OF_SCHEMAS,
+  closeUnspecifiedObjectAdditionalProperties,
   escapeJsonPointerSegment,
   MAP_OF_SCHEMAS,
   resolveLocalJsonPointer,
@@ -135,6 +136,8 @@ export function validateDynamicJsonSchema(value: unknown): DynamicJsonSchema {
   if (!isJsonObject(clone)) {
     throw new DynamicJsonSchemaError("JSON Schema conversion must return an object.");
   }
+
+  closeUnspecifiedObjectAdditionalProperties(clone);
 
   const dialect = clone.$schema;
   if (dialect !== undefined && (typeof dialect !== "string" || !DIALECTS.has(dialect))) {

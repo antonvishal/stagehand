@@ -11,7 +11,10 @@ import { TimeoutError } from "../errors.js";
 import * as inference from "../inference.js";
 import type { ClientLlmRequest } from "../llm/clientLlmClient.js";
 import type { GatewayContext } from "../llm/gatewayClient.js";
-import { createStructuredOutputContractFromValidated } from "../llm/structuredOutput.js";
+import {
+  createStructuredOutputContractFromValidated,
+  StructuredOutputValidationError,
+} from "../llm/structuredOutput.js";
 import type { StagehandLogger } from "../logger.js";
 import { bytesToBase64 } from "../understudy/fileUploadUtils.js";
 import type { Page } from "../understudy/page.js";
@@ -141,6 +144,12 @@ export async function extract({
     let output: unknown = rest;
     const idToUrl = (combinedUrlMap ?? {}) as Record<EncodedId, string>;
     output = urlAwareSchema.restoreUrls(output, idToUrl);
+    const restored = createStructuredOutputContractFromValidated(
+      "Extraction",
+      wrappedSchema,
+    ).validate(output);
+    if (restored.issues) throw new StructuredOutputValidationError(restored.issues);
+    output = restored.value;
     if (!isObjectSchema && isJsonObject(output)) output = output[wrapKey];
 
     logger.info(
