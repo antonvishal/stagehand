@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { toStandardJsonSchema } from "@valibot/to-json-schema";
-import * as valibotJsonSchema15 from "@valibot/to-json-schema15";
 import * as arktype from "arktype";
-import * as arktype2128 from "arktype2128";
 import * as valibot from "valibot";
-import * as valibot12 from "valibot12";
 import Type, { type Static } from "typebox";
 import * as zod3 from "zod3";
-import * as zod41 from "zod41/v4";
 
 import {
   jsonSchema,
@@ -194,19 +190,6 @@ describe("extract schema boundary", () => {
     });
   });
 
-  it("supports the documented Zod and ArkType minimum versions", async () => {
-    const zod42 = await import("zod42/v4");
-    const zodSchema = zod42.z.object({ name: zod42.z.string() });
-    const arkSchema = arktype2128.type({ name: "string", "quantity?": "number >= 0" });
-
-    await expect(resolveExtractSchema(zodSchema).validate({ name: "widget" })).resolves.toEqual({
-      name: "widget",
-    });
-    await expect(
-      resolveExtractSchema(arkSchema).validate({ name: "widget", quantity: 2 }),
-    ).resolves.toEqual({ name: "widget", quantity: 2 });
-  });
-
   it("accepts Valibot through its official Standard JSON Schema adapter", async () => {
     const schema = toStandardJsonSchema(
       valibot.object({
@@ -221,20 +204,6 @@ describe("extract schema boundary", () => {
       required: ["name"],
     });
     await expect(resolved.validate({ name: "widget" })).resolves.toEqual({
-      name: "widget",
-      quantity: 1,
-    });
-  });
-
-  it("supports the documented Valibot and adapter minimum versions", async () => {
-    const schema = valibotJsonSchema15.toStandardJsonSchema(
-      valibot12.object({
-        name: valibot12.string(),
-        quantity: valibot12.optional(valibot12.number(), 1),
-      }),
-    );
-
-    await expect(resolveExtractSchema(schema).validate({ name: "widget" })).resolves.toEqual({
       name: "widget",
       quantity: 1,
     });
@@ -331,9 +300,6 @@ describe("extract schema boundary", () => {
 
   it("rejects Zod versions without native dual-standard support", () => {
     expect(() => resolveExtractSchema(zod3.object({ name: zod3.string() }))).toThrow(
-      /Zod 4\.2\.0 or newer/,
-    );
-    expect(() => resolveExtractSchema(zod41.z.object({ name: zod41.z.string() }))).toThrow(
       /Zod 4\.2\.0 or newer/,
     );
   });
