@@ -37,6 +37,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { STAGEHAND_SDK_CLIENT_INFO } from "./sdkIdentity.js";
 import {
   claimStagehandBrowser,
+  invalidateStagehandBrowser,
   releaseStagehandBrowser,
   type ClaimedStagehandBrowser,
   type StagehandBrowser,
@@ -87,7 +88,7 @@ export class Stagehand {
         (stagehand.initRequestStarted && !isDefinitiveRPCErrorResponse(error));
       if (initFailureIsAmbiguous) {
         try {
-          await browser.close();
+          await invalidateStagehandBrowser(browser);
         } catch (cleanupError) {
           throw new AggregateError(
             [error, cleanupError],
@@ -183,7 +184,10 @@ export class Stagehand {
         stagehandCreateParamsForWorker(createConfig, browser),
         signal,
       );
-      attachStagehandBrowserContext(this.browserHandle, new BrowserContext(rpcClient));
+      attachStagehandBrowserContext(
+        this.browserHandle,
+        new BrowserContext(rpcClient, () => this.browserHandle.close()),
+      );
     } catch (error) {
       this.removeClientLLMHandler?.();
       this.removeClientLLMHandler = undefined;
@@ -280,12 +284,15 @@ export class Stagehand {
 
   close(): Promise<void> {
     this.closePromise ??= (async () => {
+      let shouldReleaseBrowserClaim = !this.isInitialized;
       try {
         if (this.isInitialized) {
           try {
             await this.rpcClient?.send(StagehandMethods.stagehandClose, {});
+            shouldReleaseBrowserClaim = true;
           } catch (error) {
             if (!(error instanceof CDPConnectionClosedError)) throw error;
+            shouldReleaseBrowserClaim = true;
           }
         }
       } finally {
@@ -296,6 +303,7 @@ export class Stagehand {
         this.rpcClient?.close(new Error("Stagehand closed"), { closeTransport: false });
         this.rpcClient = undefined;
         detachStagehandBrowserContext(this.browserHandle);
+        if (shouldReleaseBrowserClaim) releaseStagehandBrowser(this.browserHandle);
         this.isInitialized = false;
       }
     })();
