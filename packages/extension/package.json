@@ -22,7 +22,6 @@
     "@opentelemetry/resources": "catalog:",
     "@opentelemetry/sdk-trace-web": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
-    "@standard-schema/spec": "catalog:",
     "ai": "catalog:",
     "devtools-protocol": "catalog:",
     "zod": "catalog:",

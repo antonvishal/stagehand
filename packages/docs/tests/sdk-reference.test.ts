@@ -1128,7 +1128,7 @@ describe("SDK reference surface", () => {
         // public overloads; the documented return type reflects the schema-bearing overload.
         const returnType =
           language === "TypeScript" && method.operationName === "stagehand.extract"
-            ? "Promise<ExtractResult<StandardSchemaV1.InferOutput<Schema>>>"
+            ? "Promise<ExtractResult<Schema>>"
             : method.returnType;
         const expected = publicTypeCandidates(
           returnType,
@@ -1216,7 +1216,7 @@ describe("SDK reference surface", () => {
             publicReferenceFieldType(method, language, field.key) ??
             (method.operationName === "stagehand.extract" && field.key === "result.data"
               ? language === "TypeScript"
-                ? "StandardSchemaV1.InferOutput<Schema>"
+                ? "Schema"
                 : "ResultModel"
               : canonicalSchemaType(field.schema, language, protocol));
           if (actual.type !== expectedType || actual.optional !== field.optional) {

@@ -42,11 +42,9 @@ export type { InitScriptSource } from "./pageScripts.js";
 export { Stagehand, type ExtractMetadata, type ExtractResult } from "./stagehand.js";
 export {
   jsonSchema,
-  standardSchemaToJsonSchema,
   StagehandSchemaError,
   StagehandValidationError,
-  validateStandardSchema,
-  type RawJsonSchema,
+  type JsonSchemaDocument,
   type StagehandSchema,
   type StandardJSONSchemaV1,
   type StandardSchemaV1,

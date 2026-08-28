@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { validateDynamicJsonSchema } from "../../protocol/dynamic-json-schema.ts";
+import { isJsonObject, validateDynamicJsonSchema } from "../../protocol/dynamic-json-schema.ts";
 import type {
   ClientModelReference,
   ExtractResult,
@@ -12,25 +12,22 @@ import * as inference from "../inference.js";
 import type { ClientLlmRequest } from "../llm/clientLlmClient.js";
 import type { GatewayContext } from "../llm/gatewayClient.js";
 import {
-  createStructuredOutputContract,
+  createStructuredOutputContractFromValidated,
   StructuredOutputValidationError,
 } from "../llm/structuredOutput.js";
 import type { StagehandLogger } from "../logger.js";
 import { bytesToBase64 } from "../understudy/fileUploadUtils.js";
 import type { Page } from "../understudy/page.js";
-import type { EncodedId, SchemaPathSegments } from "../types/private/internal.js";
-import { injectUrls, transformJsonSchemaUrls } from "../utils.js";
+import type { EncodedId } from "../types/private/internal.js";
 import { createTimeoutGuard } from "../handlers/handlerUtils/timeoutGuard.js";
 import * as cacheService from "./cacheService.js";
+import {
+  createUrlAwareExtractionSchema,
+  schemaRequiresObject,
+  wrapRootSchema,
+} from "./extractSchemaUrls.js";
 import * as llmService from "./llmService.js";
 import { disabledCacheMetadata, zeroStagehandResultUsage } from "./resultUsage.js";
-
-/** Replaces URL strings with DOM IDs until extraction has resolved the page's URL map. */
-export function transformUrlStringsToNumericIds(
-  schema: Record<string, unknown>,
-): [Record<string, unknown>, SchemaPathSegments[]] {
-  return transformJsonSchemaUrls(schema);
-}
 
 interface ExtractionResponse extends Record<string, unknown> {
   metadata: { completed: boolean };
@@ -112,15 +109,17 @@ export async function extract({
     );
 
     const schema = validateDynamicJsonSchema(params.schema);
-    const finalOutputSchema = createStructuredOutputContract("ExtractionResult", schema);
-    const isObjectSchema = schema.type === "object" || isRecord(schema.properties);
-    const wrapKey = "value" as const;
-    const [transformedJsonSchema, urlFieldPaths] = transformUrlStringsToNumericIds(
-      isObjectSchema ? schema : wrapRootSchema(schema, wrapKey),
+    const finalOutputSchema = createStructuredOutputContractFromValidated(
+      "ExtractionResult",
+      schema,
     );
-    const transformedSchema = createStructuredOutputContract(
-      "TransformedExtraction",
-      transformedJsonSchema,
+    const isObjectSchema = schemaRequiresObject(schema);
+    const wrapKey = "value" as const;
+    const wrappedSchema = isObjectSchema ? schema : wrapRootSchema(schema, wrapKey);
+    const urlAwareSchema = createUrlAwareExtractionSchema(wrappedSchema);
+    const transformedSchema = createStructuredOutputContractFromValidated(
+      "Extraction",
+      urlAwareSchema.jsonSchema,
     );
     const screenshotContent: LLMImageContent | undefined = screenshot
       ? { type: "image", data: bytesToBase64(screenshot), mimeType: "image/png" }
@@ -148,10 +147,8 @@ export async function extract({
     } = extractionResponse;
     let output: unknown = rest;
     const idToUrl = (combinedUrlMap ?? {}) as Record<EncodedId, string>;
-    for (const { segments } of urlFieldPaths) {
-      injectUrls(output, segments, idToUrl as Record<string, string>);
-    }
-    if (!isObjectSchema && isRecord(output)) output = output[wrapKey];
+    output = urlAwareSchema.restoreUrls(output, idToUrl);
+    if (!isObjectSchema && isJsonObject(output)) output = output[wrapKey];
 
     logger.info(
       completed
@@ -190,30 +187,4 @@ export async function extract({
       },
     };
   }
-}
-
-export function wrapRootSchema(
-  schema: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> {
-  for (const keyword of ["$id", "$anchor", "$dynamicAnchor"] as const) {
-    if (schema[keyword] !== undefined) {
-      throw new TypeError(
-        `Cannot wrap a non-object JSON Schema containing ${keyword}; relocation would change its reference scope.`,
-      );
-    }
-  }
-  const { $schema, $defs, ...body } = schema;
-  return {
-    ...($schema === undefined ? {} : { $schema }),
-    ...($defs === undefined ? {} : { $defs }),
-    type: "object",
-    properties: { [key]: body },
-    required: [key],
-    additionalProperties: false,
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

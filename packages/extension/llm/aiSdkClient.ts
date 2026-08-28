@@ -219,7 +219,7 @@ export async function generateWithAiSdk(
       : {}),
   });
 
-  // The AI SDK result'z `output` getter throws NoOutputGeneratedError unless
+  // The AI SDK result's `output` getter throws NoOutputGeneratedError unless
   // the generation finished with "stop" (e.g. tool-call turns), so only read
   // it when structured output was requested.
   const generation = {

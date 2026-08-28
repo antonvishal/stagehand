@@ -32,8 +32,12 @@ import {
   type StagehandClientObserveOptions,
 } from "./clientSchemas.js";
 import { CDPConnectionClosedError } from "./cdpClient.js";
-import { isExtractSchemaIntent, resolveExtractSchema, type StagehandSchema } from "./schema.js";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+import {
+  isExtractSchemaIntent,
+  resolveExtractSchema,
+  type StagehandSchema,
+  type StagehandSchemaOutput,
+} from "./schema.js";
 import { STAGEHAND_SDK_CLIENT_INFO } from "./sdkIdentity.js";
 import {
   claimStagehandBrowser,
@@ -50,8 +54,8 @@ type ProtocolExtractResult = import("../../protocol/types.js").ExtractResult;
 
 export type ExtractMetadata = ProtocolExtractResult["metadata"];
 
-export type ExtractResult<Data = DefaultExtractData> = {
-  data: Data;
+export type ExtractResult<T = DefaultExtractData> = {
+  data: T extends StagehandSchema ? StagehandSchemaOutput<T> : T;
   metadata: ExtractMetadata;
 };
 
@@ -249,7 +253,7 @@ export class Stagehand {
     instruction: string,
     schema: Schema,
     options?: StagehandClientExtractOptions,
-  ): Promise<ExtractResult<StandardSchemaV1.InferOutput<Schema>>>;
+  ): Promise<ExtractResult<Schema>>;
   async extract(
     instruction: string,
     schema?: StagehandSchema | StagehandClientExtractOptions,

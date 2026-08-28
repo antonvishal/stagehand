@@ -1413,7 +1413,13 @@ describe("Stagehand TS object wrapper", () => {
     const stagehand = createStagehandWithClientForTest(client);
     const page = new Page(client, { pageId: "page-1" });
     const properties = { heading: { type: "string" as const } };
-    const schema = jsonSchema<{ heading: string }>(properties);
+    const schema = jsonSchema<{ heading: string }>({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties,
+      required: ["heading"],
+      additionalProperties: false,
+    });
 
     await expect(stagehand.extract("Extract the page heading", schema, { page })).resolves.toEqual({
       data: { heading: "Example Domain" },

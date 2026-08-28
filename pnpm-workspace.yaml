@@ -8,7 +8,6 @@ catalog:
   "@valibot/to-json-schema": 1.7.1
   "@standard-schema/spec": 1.1.0
   "@cfworker/json-schema": 4.1.1
-  json-schema-typed: 8.0.2
   arktype: 2.2.3
   effect: 4.0.0-rc.112
   valibot: 1.4.2
@@ -64,8 +63,12 @@ catalog:
   mint: 4.2.788
   publint: ^0.3.8
   smol-toml: 1.7.0
+catalogs:
+  sdk-minimum:
+    zod: ^4.2.0
 overrides:
   vite: "catalog:"
+  zod: "catalog:"
 allowBuilds:
   "@ast-grep/lang-go": true
   "@ast-grep/lang-python": true
@@ -96,4 +99,3 @@ minimumReleaseAgeExclude:
   - "@earendil-works/pi-protocol@0.84.2"
   - "@earendil-works/pi-telemetry@0.84.2"
   - "@earendil-works/pi-tui@0.84.2"
-  - zod@4.5.0-canary.20260827T054049

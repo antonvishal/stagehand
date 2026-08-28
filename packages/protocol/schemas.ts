@@ -675,7 +675,7 @@ export const CacheStatusSchema = z.enum(["HIT", "MISS", "DISABLED"]).meta({ id: 
 
 /** Server-side caching configuration: a boolean toggle, or an object enabling
  * caching with an optional hit-count threshold (how many identical results
- * must be seen before the cache serves a hit; overrides the project'z
+ * must be seen before the cache serves a hit; overrides the project's
  * configured threshold). */
 export const CachingSchema = z
   .union([

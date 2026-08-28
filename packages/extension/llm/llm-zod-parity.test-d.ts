@@ -1,5 +1,4 @@
 import { expectTypeOf } from "vitest";
-import { z } from "zod/v4";
 import {
   ChatCompletionOptionsSchema,
   ChatMessageContentSchema,

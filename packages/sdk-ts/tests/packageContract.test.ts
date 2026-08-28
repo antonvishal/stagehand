@@ -59,17 +59,20 @@ describe("published TypeScript SDK", () => {
       );
       const zodRuntimeImport = /(?:from\s*|import\s*)["']zod(?:\/[^"']*)?["']|require\(["']zod/u;
 
-      expect(publishedManifest.dependencies?.zod).toBe("4.5.0-canary.20260827T054049");
+      expect(publishedManifest.dependencies?.zod).toBe("^4.2.0");
       expect(publishedManifest.dependencies?.["@standard-schema/spec"]).toBeDefined();
       expect(publishedManifest.dependencies?.["@cfworker/json-schema"]).toBeDefined();
-      expect(publishedManifest.dependencies?.["json-schema-typed"]).toBeDefined();
+      expect(publishedManifest.dependencies).not.toHaveProperty("json-schema-typed");
       expect(publishedManifest.dependencies).not.toHaveProperty("typebox");
       expect(runtimeBundle).toMatch(zodRuntimeImport);
       expect(runtimeBundle).toContain("@cfworker/json-schema");
       expect(runtimeBundle).not.toMatch(/typebox|runtime-schema|zod\/compile/u);
       expect(declarations).toMatch(/from\s+["']zod(?:\/[^"']*)?["']/u);
       expect(declarations).toMatch(/from\s+["']@standard-schema\/spec["']/u);
-      expect(declarations).toMatch(/from\s+["']json-schema-typed["']/u);
+      expect(declarations).not.toMatch(/from\s+["']json-schema-typed["']/u);
+      expect(declarations).toContain("JsonSchemaDocument");
+      expect(declarations).not.toContain("JsonSchemaProperties");
+      expect(declarations).not.toContain("RawJsonSchema");
       expect(declarations).not.toMatch(/from\s+["']typebox(?:\/[^"']*)?["']/u);
       expect(declarations).not.toMatch(/runtime-schema|zod\/compile/u);
       expect(extensionBundle).not.toMatch(/typebox|runtime-schema|fromJSONSchema|zod\/compile/u);
@@ -78,16 +81,7 @@ describe("published TypeScript SDK", () => {
 
       const { stdout: productionList } = await execFileAsync(
         "pnpm",
-        [
-          "list",
-          "zod",
-          "@cfworker/json-schema",
-          "json-schema-typed",
-          "--prod",
-          "--depth",
-          "Infinity",
-          "--json",
-        ],
+        ["list", "zod", "@cfworker/json-schema", "--prod", "--depth", "Infinity", "--json"],
         { cwd: consumerDirectory },
       );
       const listed = JSON.parse(productionList) as Array<{
@@ -95,7 +89,7 @@ describe("published TypeScript SDK", () => {
       }>;
       expect(JSON.stringify(listed)).toContain('"zod"');
       expect(JSON.stringify(listed)).toContain('"@cfworker/json-schema"');
-      expect(JSON.stringify(listed)).toContain('"json-schema-typed"');
+      expect(JSON.stringify(listed)).not.toContain('"json-schema-typed"');
       await writeFile(
         path.join(consumerDirectory, "verify.mjs"),
         `
@@ -135,7 +129,11 @@ describe("published TypeScript SDK", () => {
               cdpUrl: "ws://127.0.0.1:9222",
             });
             BrowserbaseConnectOptionsSchema.parse({ apiKey: "bb_key", sessionId: "session_123" });
-            const rawSchema = jsonSchema({ ok: { type: "boolean" } });
+            const rawSchema = jsonSchema({
+              type: "object",
+              properties: { ok: { type: "boolean" } },
+              required: ["ok"],
+            });
             const rawResult = await rawSchema["~standard"].validate({ ok: true });
             if (!("value" in rawResult)) throw new Error("Raw schema adapter validation failed");
             if (typeof WebMCPTool !== "function") throw new Error("WebMCPTool export is unavailable");
@@ -158,6 +156,7 @@ describe("published TypeScript SDK", () => {
             Caching,
             ExtractMetadata,
             ExtractResult,
+            JsonSchemaDocument,
             LoadState,
             LocatorCentroidResult,
             LocatorClickOptions,
@@ -223,6 +222,7 @@ describe("published TypeScript SDK", () => {
           declare const extractMetadata: ExtractMetadata;
           declare const stagehand: Stagehand;
           declare const nativeSchema: StagehandSchema<string, number>;
+          declare const schemaDocument: JsonSchemaDocument;
 
           const nativeResult: Promise<ExtractResult<number>> = stagehand.extract("length", nativeSchema);
 
@@ -244,6 +244,7 @@ describe("published TypeScript SDK", () => {
             actOptions,
             observeOptions,
             extractOptions,
+            schemaDocument,
             centroid,
             snapshot,
             usage,
@@ -288,10 +289,10 @@ describe("published TypeScript SDK", () => {
           "add",
           "--save-dev",
           "--prefer-offline",
-          "zod@4.5.0-canary.20260827T054049",
-          "arktype@2.2.3",
-          "valibot@1.4.2",
-          "@valibot/to-json-schema@1.7.1",
+          "zod@4.2.0",
+          "arktype@2.1.28",
+          "valibot@1.2.0",
+          "@valibot/to-json-schema@1.5.0",
           "typebox@1.3.7",
         ],
         { cwd: consumerDirectory },
@@ -315,15 +316,22 @@ describe("published TypeScript SDK", () => {
           const zodSchema = z.object({ count: z.coerce.number() });
           const arkSchema = type({ name: "string" });
           const valibotSchema = toStandardJsonSchema(v.object({ active: v.boolean() }));
-          const ProductJsonSchema = Type.Object({ name: Type.String(), price: Type.Number() });
-          const productSchema = jsonSchema<Static<typeof ProductJsonSchema>>(ProductJsonSchema.properties);
-          const unknownSchema = jsonSchema({ value: { type: "string" } });
+          const ProductJsonSchema = Type.Object({
+            name: Type.String(),
+            price: Type.Number(),
+            note: Type.Optional(Type.String()),
+          });
+          const productSchema = jsonSchema<Static<typeof ProductJsonSchema>>(ProductJsonSchema);
+          const unknownSchema = jsonSchema({
+            type: "object",
+            properties: { value: { type: "string" } },
+          });
           type LocalConnect = z.infer<typeof LocalBrowserConnectOptionsSchema>;
           const localConnect: LocalConnect = { cdpUrl: "ws://127.0.0.1:9222" };
           LocalBrowserConnectOptionsSchema.shape.cdpUrl.parse(localConnect.cdpUrl);
           LocalBrowserConnectOptionsSchema.extend({}).pick({ cdpUrl: true }).safeParse(localConnect);
 
-          const zodResult: Promise<ExtractResult<{ count: number }>> =
+          const zodResult: Promise<ExtractResult<typeof zodSchema>> =
             stagehand.extract("count", zodSchema);
           const arkResult: Promise<ExtractResult<{ name: string }>> =
             stagehand.extract("name", arkSchema);
@@ -363,6 +371,43 @@ describe("published TypeScript SDK", () => {
           { cause: error },
         );
       }
+      await writeFile(
+        path.join(consumerDirectory, "verify-ecosystems.mjs"),
+        `
+          import { Stagehand } from "@browserbasehq/stagehand";
+          import { z } from "zod/v4";
+
+          let sentSchema;
+          const stagehand = Object.create(Stagehand.prototype);
+          stagehand.isInitialized = true;
+          stagehand.browserHandle = {
+            context: { activePage: async () => ({ pageId: "page-1" }) },
+          };
+          stagehand.rpcClient = {
+            send: async (_method, params) => {
+              sentSchema = params.schema;
+              return { data: { count: "2" }, metadata: {} };
+            },
+          };
+          const result = await stagehand.extract(
+            "count",
+            z.object({ count: z.coerce.number().int() }),
+          );
+          if (sentSchema?.properties?.count?.type !== "integer") {
+            throw new Error("Zod 4.2 schema was not converted before RPC");
+          }
+          if (result.data.count !== 2) {
+            throw new Error("Zod 4.2 did not validate and transform the RPC result");
+          }
+        `,
+      );
+      await execFileAsync(
+        process.execPath,
+        [path.join(consumerDirectory, "verify-ecosystems.mjs")],
+        {
+          cwd: consumerDirectory,
+        },
+      );
       expect(
         JSON.parse(await readFile(path.join(consumerDirectory, "package.json"), "utf8")),
       ).toMatchObject({ private: true });

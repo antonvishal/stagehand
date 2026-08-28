@@ -48,8 +48,7 @@
     "@opentelemetry/core": "catalog:",
     "@standard-schema/spec": "catalog:",
     "chrome-launcher": "catalog:",
-    "json-schema-typed": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:sdk-minimum"
   },
   "devDependencies": {
     "@valibot/to-json-schema": "catalog:",

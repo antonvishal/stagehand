@@ -45,13 +45,13 @@ extracted, err := stagehand.Extract[repository](
 </Tab>
 </Tabs>
 
-`extract()` grabs structured data from a webpage. Every call takes an instruction and an output shape: a dual Standard Schema/Standard JSON Schema implementation (such as Zod or ArkType) in TypeScript, [Pydantic](https://docs.pydantic.dev) in Python, and a Go type parameter whose JSON Schema Stagehand derives automatically. Wrap TypeBox and hand-written Draft 2020-12 property definitions with `jsonSchema()`. Stagehand validates the result against that shape before returning it, so what you get back is already typed.
+`extract()` grabs structured data from a webpage. Every call takes an instruction and an output shape: a dual Standard Schema/Standard JSON Schema implementation (such as Zod or ArkType) in TypeScript, [Pydantic](https://docs.pydantic.dev) in Python, and a Go type parameter whose JSON Schema Stagehand derives automatically. Wrap complete TypeBox and hand-written Draft 2020-12 documents with `jsonSchema()`. Stagehand validates the result against that shape before returning it, so what you get back is already typed.
 
 ### TypeScript schema libraries
 
 Use Zod and ArkType directly. Wrap Valibot with its official `toStandardJsonSchema()` adapter. For
 Effect 4, apply both `Schema.toStandardSchemaV1()` and `Schema.toStandardJSONSchemaV1()`. TypeBox
-and hand-written Draft 2020-12 property definitions go through Stagehand's `jsonSchema()` adapter.
+and hand-written Draft 2020-12 documents go through Stagehand's `jsonSchema()` adapter.
 
 See [the complete library examples and version requirements](/v4/reference/stagehand#supported-typescript-schema-implementations).
 

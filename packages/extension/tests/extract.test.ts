@@ -1,14 +1,20 @@
 import { trace } from "@opentelemetry/api";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod/v4";
+import { validateDynamicJsonSchema } from "../../protocol/dynamic-json-schema.js";
 import type { LLMGenerateParams, LLMGenerateResult } from "../../protocol/types.js";
 import type { CacheClient } from "../clients/cacheClient.js";
 import { extract } from "../inference.js";
 import { StagehandLogger } from "../logger.js";
 import { createStructuredOutputContract } from "../llm/structuredOutput.js";
+import { createZodStructuredOutputContract } from "../llm/structuredOutput.js";
 import * as cacheService from "../services/cacheService.js";
 import * as extractService from "../services/extractService.js";
-import { injectUrls } from "../utils.js";
+import {
+  createUrlAwareExtractionSchema,
+  schemaRequiresObject,
+  wrapRootSchema,
+} from "../services/extractSchemaUrls.js";
 
 describe("extract inference", () => {
   it("runs extraction and completion metadata through structured LLM calls", async () => {
@@ -47,7 +53,10 @@ describe("extract inference", () => {
     const result = await extract({
       instruction: "Extract the page heading",
       domElements: "[0-1] heading: Example Domain",
-      schema: z.object({ heading: z.string() }).required(),
+      schema: createZodStructuredOutputContract(
+        "Extraction",
+        z.object({ heading: z.string() }).required(),
+      ),
       generate,
     });
 
@@ -94,7 +103,10 @@ describe("extract inference", () => {
       extract({
         instruction: "Extract the page heading",
         domElements: "[0-1] heading: Example Domain",
-        schema: z.object({ heading: z.string() }).required(),
+        schema: createZodStructuredOutputContract(
+          "Extraction",
+          z.object({ heading: z.string() }).required(),
+        ),
         generate,
       }),
     ).rejects.toThrow();
@@ -119,7 +131,10 @@ describe("extract inference", () => {
     await extract({
       instruction: "Extract the heading shown in the screenshot",
       domElements: "[0-1] heading",
-      schema: z.object({ heading: z.string() }).required(),
+      schema: createZodStructuredOutputContract(
+        "Extraction",
+        z.object({ heading: z.string() }).required(),
+      ),
       generate,
       screenshot,
     });
@@ -149,7 +164,7 @@ describe("extract inference", () => {
 });
 
 describe("extract service", () => {
-  it("rewrites URL fields through Draft 2020-12 traversal keywords and local references", () => {
+  it("rewrites only structural URL paths and local references", () => {
     const url = { type: "string", format: "uri" };
     const schema = {
       $defs: { url },
@@ -177,7 +192,7 @@ describe("extract service", () => {
       additionalProperties: { $ref: "#/$defs/url" },
     };
     const original = structuredClone(schema);
-    const [transformed, paths] = extractService.transformUrlStringsToNumericIds(schema);
+    const contract = createUrlAwareExtractionSchema(validateDynamicJsonSchema(schema));
     const output = {
       direct: "0-1",
       list: ["0-2"],
@@ -195,26 +210,46 @@ describe("extract service", () => {
       ]),
     );
 
-    for (const { segments } of paths) injectUrls(output, segments, mapping);
+    contract.restoreUrls(output, mapping);
 
     expect(output).toStrictEqual({
       direct: "https://example.com/1",
       list: ["https://example.com/2"],
       tuple: ["https://example.com/3"],
       conditional: {
-        target: "https://example.com/4",
-        fallback: "https://example.com/5",
+        target: "0-4",
+        fallback: "0-5",
       },
-      dependent: { target: "https://example.com/6" },
-      matches: ["https://example.com/7"],
+      dependent: { target: "0-6" },
+      matches: ["0-7"],
       linkHome: "https://example.com/8",
       arbitrary: "https://example.com/9",
     });
     expect(schema).toStrictEqual(original);
-    expect(transformed).not.toBe(schema);
+    expect(contract.jsonSchema).not.toBe(schema);
+    expect(contract.jsonSchema).toMatchObject({
+      properties: {
+        direct: { type: "string", pattern: "^\\d+-\\d+$" },
+        conditional: {
+          // oxlint-disable-next-line unicorn/no-thenable -- Draft 2020-12 conditional keyword.
+          then: { properties: { target: { $ref: "#/$defs/url" } } },
+          else: { properties: { fallback: { $ref: "#/$defs/url" } } },
+        },
+        dependent: {
+          dependentSchemas: {
+            enabled: { properties: { target: { $ref: "#/$defs/url" } } },
+          },
+        },
+        matches: { contains: { $ref: "#/$defs/url" } },
+      },
+    });
+
+    const missing = { direct: "0-404" };
+    contract.restoreUrls(missing, mapping);
+    expect(missing).toStrictEqual({ direct: "" });
   });
 
-  it("wraps non-object roots without relocating definitions or mutating the schema", () => {
+  it("wraps non-object roots with relocated definitions and without mutation", () => {
     const schema = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $defs: { item: { type: "string" } },
@@ -222,22 +257,113 @@ describe("extract service", () => {
       items: { $ref: "#/$defs/item" },
     };
     const original = structuredClone(schema);
-    const wrapped = extractService.wrapRootSchema(schema, "value");
+    const wrapped = wrapRootSchema(schema, "value");
 
     expect(wrapped).toMatchObject({
-      $defs: schema.$defs,
       type: "object",
       properties: {
-        value: { type: "array", items: { $ref: "#/$defs/item" } },
+        value: {
+          $defs: schema.$defs,
+          type: "array",
+          items: { $ref: "#/properties/value/$defs/item" },
+        },
       },
       required: ["value"],
     });
     expect(schema).toStrictEqual(original);
   });
 
+  it("recognizes object roots through local references and compositions", () => {
+    const referenced = validateDynamicJsonSchema({
+      $defs: { result: { type: "object", properties: { name: { type: "string" } } } },
+      $ref: "#/$defs/result",
+    });
+    const intersected = validateDynamicJsonSchema({
+      allOf: [{ type: "object" }, { properties: { name: { type: "string" } } }],
+    });
+    const objectUnion = validateDynamicJsonSchema({
+      oneOf: [{ type: "object" }, { $ref: "#/$defs/result" }],
+      $defs: { result: { type: "object" } },
+    });
+
+    expect(schemaRequiresObject(referenced)).toBe(true);
+    expect(schemaRequiresObject(intersected)).toBe(true);
+    expect(schemaRequiresObject(objectUnion)).toBe(true);
+  });
+
+  it("wraps nullable and mixed roots that may produce non-object values", () => {
+    for (const schema of [
+      { type: "array" },
+      { type: ["object", "null"] },
+      { anyOf: [{ type: "object" }, { type: "string" }] },
+    ]) {
+      expect(schemaRequiresObject(validateDynamicJsonSchema(schema))).toBe(false);
+    }
+  });
+
+  it("preserves root self-references when wrapping a non-object schema", async () => {
+    const schema = validateDynamicJsonSchema({
+      anyOf: [{ type: "string" }, { type: "array", items: { $ref: "#" } }],
+    });
+    const wrapped = wrapRootSchema(schema, "value");
+    const contract = createStructuredOutputContract("recursive root", wrapped);
+
+    await expect(contract.validate({ value: ["one", ["two"]] })).resolves.toMatchObject({
+      success: true,
+    });
+    expect(schema).toStrictEqual({
+      anyOf: [{ type: "string" }, { type: "array", items: { $ref: "#" } }],
+    });
+  });
+
+  it("restores URL fields at every depth of a recursive schema", async () => {
+    const schema = validateDynamicJsonSchema({
+      $defs: {
+        node: {
+          type: "object",
+          properties: {
+            url: { type: "string", format: "uri" },
+            children: { type: "array", items: { $ref: "#/$defs/node" } },
+          },
+          required: ["url", "children"],
+          additionalProperties: false,
+        },
+      },
+      $ref: "#/$defs/node",
+    });
+    const wrapped = wrapRootSchema(schema, "value");
+    const contract = createUrlAwareExtractionSchema(wrapped);
+    const output = {
+      value: {
+        url: "0-1",
+        children: [{ url: "0-2", children: [{ url: "0-3", children: [] }] }],
+      },
+    };
+    const restored = contract.restoreUrls(output, {
+      "0-1": "https://example.com/one",
+      "0-2": "https://example.com/two",
+      "0-3": "https://example.com/three",
+    });
+
+    expect(restored).toEqual({
+      value: {
+        url: "https://example.com/one",
+        children: [
+          {
+            url: "https://example.com/two",
+            children: [{ url: "https://example.com/three", children: [] }],
+          },
+        ],
+      },
+    });
+    await expect(
+      createStructuredOutputContract("recursive URLs", wrapped).validate(restored),
+    ).resolves.toMatchObject({ success: true });
+  });
+
   it("rejects non-object roots whose identifier scope cannot be relocated safely", () => {
     expect(() =>
-      extractService.wrapRootSchema({ $id: "https://example.com/root", type: "string" }, "value"),
+      wrapRootSchema({ $id: "https://example.com/root", type: "string" }, "value"),
     ).toThrow(/relocation would change its reference scope/);
   });
 
@@ -261,14 +387,13 @@ describe("extract service", () => {
       $ref: "#/$defs/node",
     };
 
-    const [transformedJsonSchema, urlPaths] =
-      extractService.transformUrlStringsToNumericIds(schema);
+    const urlContract = createUrlAwareExtractionSchema(validateDynamicJsonSchema(schema));
+    const transformedJsonSchema = urlContract.jsonSchema;
     const transformed = createStructuredOutputContract(
       "recursive extraction",
       transformedJsonSchema,
     );
 
-    expect(urlPaths).toStrictEqual([]);
     await expect(
       transformed.validate({
         value: "root",
