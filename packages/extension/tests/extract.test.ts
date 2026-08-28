@@ -308,8 +308,8 @@ describe("extract service", () => {
     const wrapped = wrapRootSchema(schema, "value");
     const contract = createStructuredOutputContract("recursive root", wrapped);
 
-    await expect(contract.validate({ value: ["one", ["two"]] })).resolves.toMatchObject({
-      success: true,
+    expect(contract.validate({ value: ["one", ["two"]] })).toMatchObject({
+      value: { value: ["one", ["two"]] },
     });
     expect(schema).toStrictEqual({
       anyOf: [{ type: "string" }, { type: "array", items: { $ref: "#" } }],
@@ -356,9 +356,9 @@ describe("extract service", () => {
         ],
       },
     });
-    await expect(
+    expect(
       createStructuredOutputContract("recursive URLs", wrapped).validate(restored),
-    ).resolves.toMatchObject({ success: true });
+    ).toMatchObject({ value: restored });
   });
 
   it("rejects non-object roots whose identifier scope cannot be relocated safely", () => {
@@ -394,12 +394,17 @@ describe("extract service", () => {
       transformedJsonSchema,
     );
 
-    await expect(
+    expect(
       transformed.validate({
         value: "root",
         children: [{ value: "child", children: [] }],
       }),
-    ).resolves.toMatchObject({ success: true });
+    ).toMatchObject({
+      value: {
+        value: "root",
+        children: [{ value: "child", children: [] }],
+      },
+    });
     expect(transformedJsonSchema).toStrictEqual(schema);
   });
 

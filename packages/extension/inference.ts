@@ -132,8 +132,8 @@ async function generateStructured<Output>(
   if (response.outputFormat !== "json_schema") {
     throw new TypeError(`${name} generation returned text instead of structured content`);
   }
-  const validation = await contract.validate(response.structuredContent);
-  if (!validation.success) throw new StructuredOutputValidationError(validation.issues);
+  const validation = contract.validate(response.structuredContent);
+  if (validation.issues) throw new StructuredOutputValidationError(validation.issues);
   return {
     data: validation.value,
     usage: response.usage,

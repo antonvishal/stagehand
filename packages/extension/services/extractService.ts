@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { isJsonObject, validateDynamicJsonSchema } from "../../protocol/dynamic-json-schema.ts";
+import { isJsonObject, validateDynamicJsonSchema } from "../../protocol/dynamic-json-schema.js";
 import type {
   ClientModelReference,
   ExtractResult,
@@ -11,10 +11,7 @@ import { TimeoutError } from "../errors.js";
 import * as inference from "../inference.js";
 import type { ClientLlmRequest } from "../llm/clientLlmClient.js";
 import type { GatewayContext } from "../llm/gatewayClient.js";
-import {
-  createStructuredOutputContractFromValidated,
-  StructuredOutputValidationError,
-} from "../llm/structuredOutput.js";
+import { createStructuredOutputContractFromValidated } from "../llm/structuredOutput.js";
 import type { StagehandLogger } from "../logger.js";
 import { bytesToBase64 } from "../understudy/fileUploadUtils.js";
 import type { Page } from "../understudy/page.js";
@@ -109,10 +106,6 @@ export async function extract({
     );
 
     const schema = validateDynamicJsonSchema(params.schema);
-    const finalOutputSchema = createStructuredOutputContractFromValidated(
-      "ExtractionResult",
-      schema,
-    );
     const isObjectSchema = schemaRequiresObject(schema);
     const wrapKey = "value" as const;
     const wrappedSchema = isObjectSchema ? schema : wrapRootSchema(schema, wrapKey);
@@ -162,9 +155,7 @@ export async function extract({
       },
     );
 
-    const validation = await finalOutputSchema.validate(output);
-    if (!validation.success) throw new StructuredOutputValidationError(validation.issues);
-    const data = z.json().parse(validation.value);
+    const data = z.json().parse(output);
     return {
       result: {
         data,

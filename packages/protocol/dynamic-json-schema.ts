@@ -1,6 +1,6 @@
 import { Validator } from "@cfworker/json-schema";
 import type { Schema } from "@cfworker/json-schema";
-import { assertDynamicValidationWork } from "./dynamic-json-schema-budget.js";
+import { assertDynamicValueWork, schemaValidationWeight } from "./dynamic-json-schema-budget.js";
 import { validateDynamicJsonSchema } from "./dynamic-json-schema-profile.js";
 import type { DynamicJsonSchemaValidator } from "./dynamic-json-schema-types.js";
 import { DynamicJsonSchemaError } from "./dynamic-json-schema-types.js";
@@ -20,7 +20,11 @@ export type {
   DynamicJsonSchemaValidator,
   JsonValue,
 } from "./dynamic-json-schema-types.js";
-export { DynamicJsonSchemaError, isJsonObject } from "./dynamic-json-schema-types.js";
+export {
+  closeUnspecifiedObjectAdditionalProperties,
+  DynamicJsonSchemaError,
+  isJsonObject,
+} from "./dynamic-json-schema-types.js";
 
 /** Builds one bounded, CSP-safe validator over an isolated canonical schema. */
 export function createDynamicJsonSchemaValidator<Output = unknown>(
@@ -44,10 +48,11 @@ export function createDynamicJsonSchemaValidatorFromValidated<Output = unknown>(
     );
   }
 
+  const schemaWeight = schemaValidationWeight(jsonSchema);
   return {
     jsonSchema,
     validate: (candidate) => {
-      assertDynamicValidationWork(jsonSchema, candidate);
+      assertDynamicValueWork(schemaWeight, candidate);
       let result: ReturnType<Validator["validate"]>;
       try {
         result = validator.validate(candidate);

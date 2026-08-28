@@ -9,4 +9,4 @@ export const StagehandRuntimeStateSchema = z.discriminatedUnion("status", [
   }),
 ]);
 
-export type StagehandRuntimeState = z.output<typeof StagehandRuntimeStateSchema>;
+export type StagehandRuntimeState = z.infer<typeof StagehandRuntimeStateSchema>;

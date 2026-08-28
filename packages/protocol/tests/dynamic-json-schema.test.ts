@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { z } from "zod/v4";
 import {
   assertDynamicValidationWork,
   createDynamicJsonSchemaValidator,
@@ -18,6 +19,42 @@ describe("dynamic JSON Schema boundary", () => {
     expect(() => validateDynamicJsonSchema(fixture("pydantic-url-binary"))).not.toThrow();
     expect(() => validateDynamicJsonSchema(fixture("invopop-recursive-root"))).not.toThrow();
     expect(() => validateDynamicJsonSchema(fixture("invopop-bytes"))).not.toThrow();
+  });
+
+  it("accepts Zod string formats whose patterns contain nested quantifiers", () => {
+    const schema = z.toJSONSchema(
+      z.object({
+        email: z.email(),
+        encoded: z.base64(),
+        address: z.ipv6(),
+      }),
+      { io: "input", target: "draft-2020-12" },
+    );
+    expect(() => validateDynamicJsonSchema(schema)).not.toThrow();
+  });
+
+  it("resolves escaped JSON Pointer segments in local references", () => {
+    const validator = createDynamicJsonSchemaValidator({
+      type: "object",
+      properties: {
+        slash: {
+          $defs: { "slash/type": { type: "string" } },
+          $ref: "#/properties/slash/$defs/slash~1type",
+        },
+        tilde: {
+          $defs: { "tilde~type": { type: "number" } },
+          $ref: "#/properties/tilde/$defs/tilde~0type",
+        },
+      },
+      required: ["slash", "tilde"],
+      additionalProperties: false,
+    });
+
+    expect(validator.validate({ slash: "yes", tilde: 1 }).value).toEqual({
+      slash: "yes",
+      tilde: 1,
+    });
+    expect(validator.validate({ slash: 1, tilde: "no" }).issues).toBeDefined();
   });
 
   it("validates the supported discriminator annotation shape", () => {

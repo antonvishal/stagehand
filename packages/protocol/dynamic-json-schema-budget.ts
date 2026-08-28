@@ -9,15 +9,24 @@ import {
 
 const LIMITS = DYNAMIC_JSON_SCHEMA_LIMITS;
 
-/** Rejects values whose interpreted validation would exceed a fixed work budget. */
-export function assertDynamicValidationWork(schema: DynamicJsonSchema, value: unknown): void {
-  const schemaWeight = countValidationWeight(schema, schema, new Set(), 0);
+/** Schema-side weight of one interpreted validation, independent of the candidate value. */
+export function schemaValidationWeight(schema: DynamicJsonSchema): number {
+  return countValidationWeight(schema, schema, new Set(), 0);
+}
+
+/** Rejects a candidate whose interpreted validation would exceed a fixed work budget. */
+export function assertDynamicValueWork(schemaWeight: number, value: unknown): void {
   const valueNodes = countValueNodes(value, new WeakSet());
   if (schemaWeight * Math.max(1, valueNodes) > LIMITS.validationWork) {
     throw new DynamicJsonSchemaError(
       `Dynamic JSON Schema validation exceeds the ${LIMITS.validationWork}-operation work limit.`,
     );
   }
+}
+
+/** Rejects values whose interpreted validation would exceed a fixed work budget. */
+export function assertDynamicValidationWork(schema: DynamicJsonSchema, value: unknown): void {
+  assertDynamicValueWork(schemaValidationWeight(schema), value);
 }
 
 function countValidationWeight(

@@ -22,6 +22,7 @@ import {
   WebMCPInvocation,
   WebMCPTool,
 } from "../src/index.js";
+import { resolveExtractSchema } from "../src/schema.js";
 import { RPCClient } from "../src/rpcClient.js";
 import {
   attachStagehandBrowserContext,
@@ -1395,7 +1396,7 @@ describe("Stagehand TS object wrapper", () => {
       requestCall(StagehandMethods.stagehandExtract, {
         pageId: "page-1",
         instruction: "Extract the page heading",
-        schema: z.json().parse(schema["~standard"].jsonSchema.input({ target: "draft-2020-12" })),
+        schema: resolveExtractSchema(schema).jsonSchema,
         options: {
           locator: { selector: "main", nth: 1 },
           ignoreLocators: [{ selector: "nav" }],
@@ -1588,7 +1589,7 @@ describe("Stagehand TS object wrapper", () => {
       requestCall(StagehandMethods.stagehandExtract, {
         pageId: "page-1",
         instruction: "Measure the heading",
-        schema: z.json().parse(schema["~standard"].jsonSchema.input({ target: "draft-2020-12" })),
+        schema: resolveExtractSchema(schema).jsonSchema,
         options: {},
       }),
     );

@@ -46,6 +46,7 @@ export {
   StagehandValidationError,
   type JsonSchemaDocument,
   type StagehandSchema,
+  type StagehandSchemaOutput,
   type StandardJSONSchemaV1,
   type StandardSchemaV1,
 } from "./schema.js";

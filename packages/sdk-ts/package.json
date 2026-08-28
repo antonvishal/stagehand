@@ -43,7 +43,6 @@
   },
   "dependencies": {
     "@browserbasehq/sdk": "catalog:",
-    "@cfworker/json-schema": "catalog:",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/core": "catalog:",
     "@standard-schema/spec": "catalog:",

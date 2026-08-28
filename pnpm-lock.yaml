@@ -837,9 +837,6 @@ importers:
       '@browserbasehq/sdk':
         specifier: 'catalog:'
         version: 2.16.0
-      '@cfworker/json-schema':
-        specifier: 'catalog:'
-        version: 4.1.1
       '@opentelemetry/api':
         specifier: 'catalog:'
         version: 1.9.1

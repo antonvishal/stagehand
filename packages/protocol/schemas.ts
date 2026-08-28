@@ -1630,11 +1630,10 @@ export const DefaultExtractDataSchema = z
   })
   .meta({ id: "DefaultExtractData" });
 
-// The default travels as an annotation inside the protocol schema, not as a reusable definition.
-// An empty metadata registry prevents Zod 4.5 from wrapping this root id in a local $ref/$defs pair.
-export const DEFAULT_EXTRACT_JSON_SCHEMA = z
-  .json()
-  .parse(z.toJSONSchema(DefaultExtractDataSchema, { metadata: z.registry() }));
+// Convert an anonymous object so Zod 4.5 does not wrap DefaultExtractData's registry id in a root $ref.
+export const DEFAULT_EXTRACT_JSON_SCHEMA = z.json().parse(
+  z.toJSONSchema(z.strictObject({ extraction: z.string() }), { target: "draft-2020-12" }),
+);
 
 export const StagehandExtractParamsSchema = z
   .strictObject({

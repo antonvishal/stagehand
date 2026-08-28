@@ -61,11 +61,11 @@ describe("published TypeScript SDK", () => {
 
       expect(publishedManifest.dependencies?.zod).toBe("^4.2.0");
       expect(publishedManifest.dependencies?.["@standard-schema/spec"]).toBeDefined();
-      expect(publishedManifest.dependencies?.["@cfworker/json-schema"]).toBeDefined();
+      expect(publishedManifest.dependencies).not.toHaveProperty("@cfworker/json-schema");
       expect(publishedManifest.dependencies).not.toHaveProperty("json-schema-typed");
       expect(publishedManifest.dependencies).not.toHaveProperty("typebox");
       expect(runtimeBundle).toMatch(zodRuntimeImport);
-      expect(runtimeBundle).toContain("@cfworker/json-schema");
+      expect(runtimeBundle).not.toContain("@cfworker/json-schema");
       expect(runtimeBundle).not.toMatch(/typebox|runtime-schema|zod\/compile/u);
       expect(declarations).toMatch(/from\s+["']zod(?:\/[^"']*)?["']/u);
       expect(declarations).toMatch(/from\s+["']@standard-schema\/spec["']/u);
@@ -81,14 +81,14 @@ describe("published TypeScript SDK", () => {
 
       const { stdout: productionList } = await execFileAsync(
         "pnpm",
-        ["list", "zod", "@cfworker/json-schema", "--prod", "--depth", "Infinity", "--json"],
+        ["list", "zod", "--prod", "--depth", "Infinity", "--json"],
         { cwd: consumerDirectory },
       );
       const listed = JSON.parse(productionList) as Array<{
         dependencies?: Record<string, unknown>;
       }>;
       expect(JSON.stringify(listed)).toContain('"zod"');
-      expect(JSON.stringify(listed)).toContain('"@cfworker/json-schema"');
+      expect(JSON.stringify(listed)).not.toContain('"@cfworker/json-schema"');
       expect(JSON.stringify(listed)).not.toContain('"json-schema-typed"');
       await writeFile(
         path.join(consumerDirectory, "verify.mjs"),

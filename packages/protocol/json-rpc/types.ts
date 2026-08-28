@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import type { z } from "zod/v4";
 import type {
   JSONRPCEnvelopeSchema,
   JSONRPCErrorObjectSchema,
@@ -12,13 +12,13 @@ import type {
   JSONRPCWireInputSchema,
 } from "./schemas.js";
 
-export type JSONRPCEnvelope = z.output<typeof JSONRPCEnvelopeSchema>;
-export type JSONRPCErrorObject = z.output<typeof JSONRPCErrorObjectSchema>;
-export type JSONRPCRequestId = z.output<typeof JSONRPCRequestIdSchema>;
-export type JSONRPCRequest = z.output<typeof JSONRPCRequestSchema>;
-export type JSONRPCNotification = z.output<typeof JSONRPCNotificationSchema>;
-export type JSONRPCSuccessResponse = z.output<typeof JSONRPCSuccessResponseSchema>;
-export type JSONRPCErrorResponse = z.output<typeof JSONRPCErrorResponseSchema>;
-export type JSONRPCResponse = z.output<typeof JSONRPCResponseSchema>;
-export type JSONRPCMessage = z.output<typeof JSONRPCMessageSchema>;
-export type JSONRPCWireInput = z.output<typeof JSONRPCWireInputSchema>;
+export type JSONRPCEnvelope = z.infer<typeof JSONRPCEnvelopeSchema>;
+export type JSONRPCErrorObject = z.infer<typeof JSONRPCErrorObjectSchema>;
+export type JSONRPCRequestId = z.infer<typeof JSONRPCRequestIdSchema>;
+export type JSONRPCRequest = z.infer<typeof JSONRPCRequestSchema>;
+export type JSONRPCNotification = z.infer<typeof JSONRPCNotificationSchema>;
+export type JSONRPCSuccessResponse = z.infer<typeof JSONRPCSuccessResponseSchema>;
+export type JSONRPCErrorResponse = z.infer<typeof JSONRPCErrorResponseSchema>;
+export type JSONRPCResponse = z.infer<typeof JSONRPCResponseSchema>;
+export type JSONRPCMessage = z.infer<typeof JSONRPCMessageSchema>;
+export type JSONRPCWireInput = z.infer<typeof JSONRPCWireInputSchema>;

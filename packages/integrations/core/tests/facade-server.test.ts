@@ -38,7 +38,7 @@ describe("built Stagehand facade stdio server", () => {
   it("returns tool errors for invalid calls without crashing", async () => {
     const invalidRun = await client.callTool({ name: "run", arguments: {} });
     expect(invalidRun.isError).toBe(true);
-    expect((invalidRun.content as unknown[])[0]).toMatchObject({ type: "text" });
+    expect(invalidRun.content[0]).toMatchObject({ type: "text" });
 
     const unknown = await client.callTool({ name: "missing", arguments: {} });
     expect(unknown.isError).toBe(true);
@@ -67,18 +67,8 @@ describe("built Stagehand facade stdio server", () => {
 });
 
 function textContent(result: Awaited<ReturnType<Client["callTool"]>>): string {
-  if (!Array.isArray(result.content)) return "";
-  const block: unknown = result.content[0];
-  return isTextContent(block) ? block.text : "";
-}
-
-function isTextContent(value: unknown): value is { type: "text"; text: string } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as Record<string, unknown>).type === "text" &&
-    typeof (value as Record<string, unknown>).text === "string"
-  );
+  const block = result.content[0];
+  return block && block.type === "text" ? block.text : "";
 }
 
 function waitForOutput(stream: Stream, expected: string): Promise<string> {

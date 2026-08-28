@@ -46,6 +46,27 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function closeUnspecifiedObjectAdditionalProperties(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) closeUnspecifiedObjectAdditionalProperties(entry);
+    return;
+  }
+  if (!isJsonObject(value)) return;
+  const typeNames =
+    typeof value.type === "string"
+      ? [value.type]
+      : Array.isArray(value.type)
+        ? value.type.filter((entry): entry is string => typeof entry === "string")
+        : [];
+  if (
+    value.additionalProperties === undefined &&
+    (typeNames.includes("object") || value.properties !== undefined)
+  ) {
+    value.additionalProperties = false;
+  }
+  for (const entry of Object.values(value)) closeUnspecifiedObjectAdditionalProperties(entry);
+}
+
 export type JsonContainer =
   | { readonly kind: "primitive"; readonly value: null | boolean | number | string }
   | { readonly kind: "array"; readonly value: unknown[] }

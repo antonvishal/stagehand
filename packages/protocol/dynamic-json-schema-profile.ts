@@ -432,23 +432,6 @@ function validatePattern(value: unknown, path: string): void {
   } catch (cause) {
     throw new DynamicJsonSchemaError(`Invalid JSON Schema pattern at ${path}.`, { cause });
   }
-  if (hasUnsafeRegexStructure(value)) {
-    throw schemaShapeError(path, "uses a potentially exponential regular expression");
-  }
-}
-
-function hasUnsafeRegexStructure(pattern: string): boolean {
-  const nestedQuantifier =
-    /\((?:[^()\\]|\\.)*(?:[+*]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.)*\)(?:[+*]|\{\d+(?:,\d*)?\})/u;
-  const quantifiedAlternation = /\((?:[^()\\]|\\.)*\|(?:[^()\\]|\\.)*\)(?:[+*]|\{\d+(?:,\d*)?\})/u;
-  const repeatedWildcard = /\.\*(?:[^|)]{0,32})\.\*/u;
-  const backReference = /\\[1-9]/u;
-  return (
-    nestedQuantifier.test(pattern) ||
-    quantifiedAlternation.test(pattern) ||
-    repeatedWildcard.test(pattern) ||
-    backReference.test(pattern)
-  );
 }
 
 function validateLocalReference(value: unknown, path: string): asserts value is string {

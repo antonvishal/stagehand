@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod/v4";
 
 import {
   createStructuredOutputContract,
+  createZodStructuredOutputContract,
   providerJsonSchema,
   StructuredOutputValidationError,
 } from "./structuredOutput.js";
@@ -35,7 +37,7 @@ describe("provider JSON Schema isolation", () => {
     ).toThrow(/Provider openai.*nested identifier scope/);
   });
 
-  it("validates output with a request-local Draft 2020-12 interpreter", async () => {
+  it("validates output with a request-local Draft 2020-12 interpreter", () => {
     const contract = createStructuredOutputContract("inventory", {
       type: "object",
       properties: { quantity: { type: "integer", minimum: 0 } },
@@ -43,16 +45,45 @@ describe("provider JSON Schema isolation", () => {
       additionalProperties: false,
     });
 
-    await expect(contract.validate({ quantity: 2 })).resolves.toMatchObject({ success: true });
-    const invalid = await contract.validate({ quantity: -1 });
-    expect(invalid.success).toBe(false);
-    if (invalid.success) return;
+    expect(contract.validate({ quantity: 2 })).toMatchObject({ value: { quantity: 2 } });
+    const invalid = contract.validate({ quantity: -1 });
+    expect(invalid.issues).toBeDefined();
+    if (!invalid.issues) return;
     expect(invalid.issues).toContainEqual(expect.objectContaining({ path: ["quantity"] }));
   });
 
-  it("rejects unsafe regular expressions, unknown assertions, and custom vocabularies", () => {
+  it("keeps describe() text and closes unspecified object additionalProperties", () => {
+    const contract = createZodStructuredOutputContract(
+      "article",
+      z.object({
+        title: z.string().describe("the main headline of the article"),
+      }),
+    );
+
+    expect(contract.jsonSchema).toMatchObject({
+      type: "object",
+      properties: {
+        title: { type: "string", description: "the main headline of the article" },
+      },
+      additionalProperties: false,
+    });
+  });
+
+  it("accepts Zod string formats whose patterns contain nested quantifiers", () => {
+    expect(() =>
+      createZodStructuredOutputContract(
+        "contact",
+        z.object({
+          email: z.email(),
+          encoded: z.base64(),
+          address: z.ipv6(),
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects unknown assertions and custom vocabularies", () => {
     for (const schema of [
-      { type: "string", pattern: "(a+)+$" },
       { type: "string", customAssertion: true },
       {
         $vocabulary: { "https://example.com/custom-vocabulary": true },
@@ -87,28 +118,26 @@ describe("provider JSON Schema isolation", () => {
     expect(invoked).toBe(false);
   });
 
-  it("does not expose cfworker error classes through its owned error surface", async () => {
+  it("does not expose cfworker error classes through its owned error surface", () => {
     const contract = createStructuredOutputContract("answer", { type: "string" });
-    const result = await contract.validate(42);
-    expect(result.success).toBe(false);
-    if (result.success) return;
+    const result = contract.validate(42);
+    expect(result.issues).toBeDefined();
+    if (!result.issues) return;
 
     const error = new StructuredOutputValidationError(result.issues);
     expect(error.name).toBe("StructuredOutputValidationError");
     expect(error.constructor.name).not.toMatch(/Validator|Schema/u);
   });
 
-  it("rejects non-JSON and aliased values before the interpreter reads them", async () => {
+  it("rejects non-JSON and aliased values before the interpreter reads them", () => {
     const contract = createStructuredOutputContract("untrusted output", {});
     const shared = { value: 1 };
     const sparse = [] as unknown[];
     sparse.length = 1;
 
-    await expect(contract.validate({ first: shared, second: shared })).rejects.toThrow(
-      /shared references/,
-    );
-    await expect(contract.validate({ value: Number.NaN })).rejects.toThrow(/JSON-safe/);
-    await expect(contract.validate(sparse)).rejects.toThrow(/sparse/);
-    await expect(contract.validate(new (class Output {})())).rejects.toThrow(/plain/);
+    expect(() => contract.validate({ first: shared, second: shared })).toThrow(/shared references/);
+    expect(() => contract.validate({ value: Number.NaN })).toThrow(/JSON-safe/);
+    expect(() => contract.validate(sparse)).toThrow(/sparse/);
+    expect(() => contract.validate(new (class Output {})())).toThrow(/plain/);
   });
 });

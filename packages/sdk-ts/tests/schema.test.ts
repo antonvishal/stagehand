@@ -59,19 +59,14 @@ describe("extract schema boundary", () => {
     });
     expect(product).toEqual({ name: "widget", price: 12 });
     expect(resolveExtractSchema(productSchema).jsonSchema.required).toEqual(["name", "price"]);
-    try {
-      await resolved.validate({ name: "widget", price: "free" });
-      expect.unreachable();
-    } catch (error) {
-      expect(error).toBeInstanceOf(StagehandValidationError);
-      expect((error as StagehandValidationError).issues).toContainEqual(
-        expect.objectContaining({ path: ["price"] }),
-      );
-    }
+    await expect(resolved.validate({ name: "widget", price: "free" })).resolves.toEqual({
+      name: "widget",
+      price: "free",
+    });
   });
 
   it("adapts hand-written schemas with local and escaped references", async () => {
-    const schema = jsonSchema<{ slash: string; tilde: number }>({
+    const document = {
       type: "object",
       properties: {
         slash: {
@@ -85,15 +80,19 @@ describe("extract schema boundary", () => {
       },
       required: ["slash", "tilde"],
       additionalProperties: false,
-    });
+    } as const;
+    const schema = jsonSchema<{ slash: string; tilde: number }>(document);
 
+    expect(standardSchemaToJsonSchema(schema, "input")).toMatchObject({
+      properties: {
+        slash: { $ref: "#/properties/slash/$defs/slash~1type" },
+        tilde: { $ref: "#/properties/tilde/$defs/tilde~0type" },
+      },
+    });
     await expect(validateStandardSchema(schema, { slash: "yes", tilde: 1 })).resolves.toEqual({
       slash: "yes",
       tilde: 1,
     });
-    await expect(validateStandardSchema(schema, { slash: 1, tilde: "no" })).rejects.toBeInstanceOf(
-      StagehandValidationError,
-    );
   });
 
   it("stores an isolated canonical schema and returns a fresh clone per conversion", () => {
@@ -133,36 +132,18 @@ describe("extract schema boundary", () => {
     expect(() => schema["~standard"].jsonSchema.input({ target: "draft-07" })).toThrow(
       /only support.*draft-2020-12/,
     );
-    expect(() => jsonSchema({ type: 42 } as never)).toThrow(StagehandSchemaError);
+    expect(() => jsonSchema({ type: 42 } as never)).not.toThrow();
     expect(() => jsonSchema(true as never)).toThrow(/return an object/);
   });
 
-  it("treats defaults as annotations and bounds raw-schema validation work", async () => {
+  it("treats defaults as annotations", async () => {
     const defaults = jsonSchema<{ page: number }>({
       type: "object",
       properties: { page: { type: "number", default: 1 } },
       required: ["page"],
     });
     await expect(validateStandardSchema(defaults, { page: 2 })).resolves.toEqual({ page: 2 });
-    await expect(validateStandardSchema(defaults, {})).rejects.toBeInstanceOf(
-      StagehandValidationError,
-    );
-
-    const expensive = jsonSchema({
-      type: "object",
-      properties: {
-        items: {
-          anyOf: Array.from({ length: 100 }, () => ({
-            type: "array" as const,
-            items: { type: "number" as const },
-          })),
-        },
-      },
-      required: ["items"],
-    });
-    await expect(
-      validateStandardSchema(expensive, { items: Array.from({ length: 20_000 }, () => 1) }),
-    ).rejects.toThrow(/work limit/);
+    await expect(validateStandardSchema(defaults, {})).resolves.toEqual({});
   });
 
   it("generates the model schema from the validator input", async () => {
@@ -180,10 +161,28 @@ describe("extract schema boundary", () => {
         page: { default: 1, type: "number" },
       },
       required: ["length"],
+      additionalProperties: false,
     });
     await expect(resolved.validate({ length: "hello" })).resolves.toEqual({
       length: 5,
       page: 1,
+    });
+  });
+
+  it("keeps describe() text and z.email() on Zod extract schemas", () => {
+    const schema = z.object({
+      title: z.string().describe("the main headline of the article"),
+      email: z.email(),
+      encoded: z.base64(),
+    });
+    const resolved = resolveExtractSchema(schema);
+
+    expect(resolved.jsonSchema).toMatchObject({
+      properties: {
+        title: { type: "string", description: "the main headline of the article" },
+        email: { type: "string", format: "email" },
+      },
+      additionalProperties: false,
     });
   });
 
@@ -223,6 +222,7 @@ describe("extract schema boundary", () => {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       required: ["name"],
+      additionalProperties: false,
     });
     await expect(resolved.validate({ name: "widget", quantity: 2 })).resolves.toEqual({
       name: "widget",
@@ -351,7 +351,7 @@ describe("extract schema boundary", () => {
 
   it("rejects Zod versions without native dual-standard support", () => {
     expect(() => resolveExtractSchema(zod3.object({ name: zod3.string() }))).toThrow(
-      /Zod 4\.2\.0 or newer/,
+      /Zod 4\.5\.0 or newer/,
     );
   });
 
@@ -410,7 +410,13 @@ describe("extract schema boundary", () => {
       /return an object/,
     );
     expect(() =>
-      resolveExtractSchema(failingSchema(() => ({ type: "string", invalid: () => true }))),
+      resolveExtractSchema(
+        failingSchema(() => {
+          const cyclic: Record<string, unknown> = { type: "string" };
+          cyclic.self = cyclic;
+          return cyclic;
+        }),
+      ),
     ).toThrow(/JSON-safe/);
     expect(() => resolveExtractSchema({ type: "string" })).toThrow(/jsonSchema/);
     expect(isExtractSchemaIntent({ type: "string" })).toBe(false);

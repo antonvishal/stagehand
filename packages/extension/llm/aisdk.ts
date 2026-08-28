@@ -236,14 +236,14 @@ You must respond in JSON format. respond WITH JSON. Do not include any other tex
               output: Output.object({
                 name: options.response_model.name,
                 schema: jsonSchema(isolatedJsonSchema, {
-                  validate: async (value) => {
-                    const result = await options.response_model!.validate(value);
-                    return result.success
-                      ? { success: true, value: result.value }
-                      : {
-                          success: false,
+                  validate: (value) => {
+                    const result = options.response_model!.validate(value);
+                    return result.issues
+                      ? {
+                          success: false as const,
                           error: new StructuredOutputValidationError(result.issues),
-                        };
+                        }
+                      : { success: true as const, value: result.value };
                   },
                 }),
               }),

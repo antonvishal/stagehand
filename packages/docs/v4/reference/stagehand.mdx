@@ -787,7 +787,7 @@ console.log(product.data, product.metadata.cache.status);
 <ResponseField name="result" type="Promise<ExtractResult<Schema>>">
   The extraction result.
 
-  <ResponseField name="result.data" type="Schema">
+  <ResponseField name="result.data" type="StagehandSchemaOutput<Schema>">
     Data validated against the caller's schema. Pass `ExtractResult<typeof schema>` to name the
     result; `data` is the schema's output type.
   </ResponseField>
@@ -990,7 +990,7 @@ const { data } = await stagehand.extract("extract product", schema);
 
 Pass a complete Draft 2020-12 document. `jsonSchema()` preserves its required and optional
 properties, definitions, references, and additional-property policy. `JsonSchemaDocument` is a
-JSON object type. The hardened profile is what `jsonSchema()` actually accepts.
+JSON object type. The extension hardens Draft 2020-12 after the schema crosses RPC.
 
 JSON Schema cannot infer a TypeScript type, so pass one to `jsonSchema<T>()`. The generic is a
 caller-supplied static type. Omit it when the type is unknown. Use Zod, ArkType, or adapted Valibot
@@ -1002,9 +1002,9 @@ transforms, or apply `default` annotations.
 
 #### What Stagehand does with the schema
 
-Before the browser call, Stagehand asks the schema for its Draft 2020-12 input representation. It
-rejects unsupported vocabularies, external references, nested identifier scopes, unsafe regular
-expressions, malformed keywords, and schemas that exceed resource limits.
+Before the browser call, Stagehand asks the schema for its Draft 2020-12 input representation.
+The extension then hardens that document: it rejects unsupported vocabularies, external references,
+nested identifier scopes, malformed keywords, and schemas that exceed resource limits.
 
 After the browser returns data, Stagehand validates it again. Native schemas and official adapters
 use the library's own validator, so their refinements and transforms remain authoritative.

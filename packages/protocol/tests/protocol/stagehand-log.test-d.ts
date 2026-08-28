@@ -4,7 +4,7 @@ import { StagehandLogSchema } from "../../schemas.js";
 
 const JsonValueSchema = z.json();
 
-type JsonValue = z.output<typeof JsonValueSchema>;
+type JsonValue = z.infer<typeof JsonValueSchema>;
 type ExpectedLog = {
   level: "debug" | "info" | "warn" | "error";
   message: string;
