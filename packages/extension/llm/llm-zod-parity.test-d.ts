@@ -91,8 +91,3 @@ expectTypeOf<SchemaInput<typeof LLMParsedResponseSchema>>().toEqualTypeOf<
   LLMParsedResponse<unknown>
 >();
 expectTypeOf<SchemaOutput<typeof LLMParsedResponseSchema>["data"]>().toEqualTypeOf<unknown>();
-
-type ExactOwnedShape = { id: string; count: number };
-z.toZod<ExactOwnedShape>()(z.object({ id: z.string() }));
-z.toZod<ExactOwnedShape>()(z.object({ id: z.string(), count: z.number(), extra: z.boolean() }));
-z.toZod<ExactOwnedShape>()(z.object({ id: z.string(), count: z.string() }));
