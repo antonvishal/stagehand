@@ -41,8 +41,12 @@ export { WebMCPInvocation, WebMCPTool } from "./webmcp.js";
 export type { InitScriptSource } from "./pageScripts.js";
 export { Stagehand, type ExtractMetadata, type ExtractResult } from "./stagehand.js";
 export {
+  jsonSchema,
+  standardSchemaToJsonSchema,
   StagehandSchemaError,
   StagehandValidationError,
+  validateStandardSchema,
+  type RawJsonSchema,
   type StagehandSchema,
   type StandardJSONSchemaV1,
   type StandardSchemaV1,

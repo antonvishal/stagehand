@@ -1,8 +1,6 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { Validator } from "@cfworker/json-schema";
-import type { Schema } from "@cfworker/json-schema";
 import {
-  assertDynamicValidationWork,
+  createDynamicJsonSchemaValidator,
   validateDynamicJsonSchema,
 } from "../../protocol/dynamic-json-schema.ts";
 import type { DynamicJsonSchema } from "../../protocol/dynamic-json-schema.ts";
@@ -52,53 +50,26 @@ export function createStructuredOutputContract(
   schema: Record<string, unknown>,
   provider?: string,
 ): StructuredOutputContract {
-  const jsonSchema = providerJsonSchema(schema, provider) as DynamicJsonSchema;
-  let validator: Validator;
+  let contract: ReturnType<typeof createDynamicJsonSchemaValidator>;
   try {
-    validator = new Validator(jsonSchema as Schema, "2020-12", true);
+    contract = createDynamicJsonSchemaValidator(schema);
   } catch (cause) {
-    throw new TypeError(`Invalid Draft 2020-12 schema for ${name}.`, { cause });
+    throw new TypeError(
+      `${provider ? `Provider ${provider}` : `Structured output ${name}`} cannot use the supplied Draft 2020-12 schema: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
   }
 
   return {
     name,
-    jsonSchema,
+    jsonSchema: contract.jsonSchema,
     validate: async (value) => {
-      assertDynamicValidationWork(jsonSchema as DynamicJsonSchema, value);
-      let result: ReturnType<Validator["validate"]>;
-      try {
-        result = validator.validate(value);
-      } catch (cause) {
-        throw new TypeError(`Draft 2020-12 validation failed for ${name}.`, { cause });
-      }
-      if (result.valid) return { success: true, value };
+      const result = contract.validate(value);
+      if (!result.issues) return { success: true, value: result.value };
       return {
         success: false,
-        issues: result.errors.map((error) => ({
-          message: error.error,
-          path: jsonPointerPath(error.instanceLocation),
-        })),
+        issues: result.issues,
       };
     },
   };
-}
-
-function jsonPointerPath(pointer: string): PropertyKey[] | undefined {
-  if (pointer === "" || pointer === "#") return undefined;
-  const normalized = pointer.startsWith("#") ? pointer.slice(1) : pointer;
-  if (!normalized.startsWith("/")) return undefined;
-  return normalized
-    .slice(1)
-    .split("/")
-    .map((segment) =>
-      safeDecodePointerSegment(segment).replaceAll("~1", "/").replaceAll("~0", "~"),
-    );
-}
-
-function safeDecodePointerSegment(segment: string): string {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
 }

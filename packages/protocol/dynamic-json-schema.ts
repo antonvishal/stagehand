@@ -1,3 +1,6 @@
+import { Validator } from "@cfworker/json-schema";
+import type { Schema } from "@cfworker/json-schema";
+
 export type JsonValue =
   | null
   | boolean
@@ -7,6 +10,20 @@ export type JsonValue =
   | { [key: string]: JsonValue };
 
 export type DynamicJsonSchema = { [key: string]: JsonValue };
+
+export interface DynamicJsonSchemaIssue {
+  readonly message: string;
+  readonly path?: readonly PropertyKey[] | undefined;
+}
+
+export type DynamicJsonSchemaValidationResult<Output> =
+  | { readonly value: Output; readonly issues?: undefined }
+  | { readonly issues: readonly DynamicJsonSchemaIssue[] };
+
+export interface DynamicJsonSchemaValidator<Output = unknown> {
+  readonly jsonSchema: DynamicJsonSchema;
+  validate(value: unknown): DynamicJsonSchemaValidationResult<Output>;
+}
 
 const DIALECTS = new Set([
   "https://json-schema.org/draft/2020-12/schema",
@@ -194,6 +211,63 @@ export function assertDynamicValidationWork(schema: DynamicJsonSchema, value: un
     throw limitError(
       `Dynamic JSON Schema validation exceeds the ${LIMITS.validationWork}-operation work limit.`,
     );
+  }
+}
+
+/** Builds one bounded, CSP-safe validator over an isolated canonical schema. */
+export function createDynamicJsonSchemaValidator<Output = unknown>(
+  value: unknown,
+): DynamicJsonSchemaValidator<Output> {
+  const jsonSchema = validateDynamicJsonSchema(value);
+  let validator: Validator;
+  try {
+    validator = new Validator(jsonSchema as Schema, "2020-12", true);
+  } catch (cause) {
+    throw new DynamicJsonSchemaError(
+      "The Draft 2020-12 interpreter could not construct a validator for this schema.",
+      { cause },
+    );
+  }
+
+  return {
+    jsonSchema,
+    validate: (candidate) => {
+      assertDynamicValidationWork(jsonSchema, candidate);
+      let result: ReturnType<Validator["validate"]>;
+      try {
+        result = validator.validate(candidate);
+      } catch (cause) {
+        if (cause instanceof DynamicJsonSchemaError) throw cause;
+        throw new DynamicJsonSchemaError("Draft 2020-12 validation failed.", { cause });
+      }
+      if (result.valid) return { value: candidate as Output };
+      return {
+        issues: result.errors.map((error) => ({
+          message: error.error,
+          path: jsonPointerPath(error.instanceLocation),
+        })),
+      };
+    },
+  };
+}
+
+function jsonPointerPath(pointer: string): PropertyKey[] | undefined {
+  if (pointer === "" || pointer === "#") return undefined;
+  const normalized = pointer.startsWith("#") ? pointer.slice(1) : pointer;
+  if (!normalized.startsWith("/")) return undefined;
+  return normalized
+    .slice(1)
+    .split("/")
+    .map((segment) =>
+      safeDecodePointerSegment(segment).replaceAll("~1", "/").replaceAll("~0", "~"),
+    );
+}
+
+function safeDecodePointerSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
   }
 }
 

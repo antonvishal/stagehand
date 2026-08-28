@@ -43,10 +43,12 @@
   },
   "dependencies": {
     "@browserbasehq/sdk": "catalog:",
+    "@cfworker/json-schema": "catalog:",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/core": "catalog:",
     "@standard-schema/spec": "catalog:",
     "chrome-launcher": "catalog:",
+    "json-schema-typed": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -54,8 +56,10 @@
     "@valibot/to-json-schema15": "npm:@valibot/to-json-schema@1.5.0",
     "arktype": "catalog:",
     "arktype2128": "npm:arktype@2.1.28",
+    "effect": "catalog:",
     "publint": "catalog:",
     "tsdown": "catalog:",
+    "typebox": "catalog:",
     "valibot": "catalog:",
     "valibot12": "npm:valibot@1.2.0",
     "vitest": "catalog:",

@@ -5,13 +5,17 @@ import * as arktype from "arktype";
 import * as arktype2128 from "arktype2128";
 import * as valibot from "valibot";
 import * as valibot12 from "valibot12";
+import Type, { type Static } from "typebox";
 import * as zod3 from "zod3";
 import * as zod41 from "zod41/v4";
 
 import {
+  jsonSchema,
+  standardSchemaToJsonSchema,
   StagehandSchemaError,
   StagehandValidationError,
   type StagehandSchema,
+  validateStandardSchema,
 } from "../src/index.js";
 import { z } from "zod/v4";
 import {
@@ -21,6 +25,110 @@ import {
 import { isExtractSchemaIntent, resolveExtractSchema } from "../src/schema.js";
 
 describe("extract schema boundary", () => {
+  it("adapts TypeBox schemas without casts and preserves generic output typing", async () => {
+    const ProductJsonSchema = Type.Object({
+      name: Type.String(),
+      price: Type.Number(),
+    });
+    const productSchema = jsonSchema<Static<typeof ProductJsonSchema>>(
+      ProductJsonSchema.properties,
+    );
+    const resolved = resolveExtractSchema(productSchema);
+
+    const product: Static<typeof ProductJsonSchema> = await resolved.validate({
+      name: "widget",
+      price: 12,
+    });
+    expect(product).toEqual({ name: "widget", price: 12 });
+    try {
+      await resolved.validate({ name: "widget", price: "free" });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(StagehandValidationError);
+      expect((error as StagehandValidationError).issues).toContainEqual(
+        expect.objectContaining({ path: ["price"] }),
+      );
+    }
+  });
+
+  it("adapts hand-written schemas with local and escaped references", async () => {
+    const schema = jsonSchema<{ slash: string; tilde: number }>({
+      slash: {
+        $defs: { "slash/type": { type: "string" } },
+        $ref: "#/properties/slash/$defs/slash~1type",
+      },
+      tilde: {
+        $defs: { "tilde~type": { type: "number" } },
+        $ref: "#/properties/tilde/$defs/tilde~0type",
+      },
+    });
+
+    await expect(validateStandardSchema(schema, { slash: "yes", tilde: 1 })).resolves.toEqual({
+      slash: "yes",
+      tilde: 1,
+    });
+    await expect(validateStandardSchema(schema, { slash: 1, tilde: "no" })).rejects.toBeInstanceOf(
+      StagehandValidationError,
+    );
+  });
+
+  it("stores an isolated canonical schema and returns a fresh clone per conversion", () => {
+    const source = { name: { type: "string" } } as const;
+    const schema = jsonSchema(source);
+    const first = standardSchemaToJsonSchema(schema, "input");
+    const second = standardSchemaToJsonSchema(schema, "output");
+
+    expect(first).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: source,
+      required: ["name"],
+      additionalProperties: false,
+    });
+    expect(first).not.toBe(source);
+    expect(first).not.toBe(second);
+    (source.name as { type: string }).type = "number";
+    (first.properties as Record<string, unknown>).name = { type: "boolean" };
+    expect(standardSchemaToJsonSchema(schema, "input")).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+  });
+
+  it("rejects unsupported adapter targets and malformed raw schemas", () => {
+    const schema = jsonSchema({ value: { type: "string" } });
+    expect(() => schema["~standard"].jsonSchema.input({ target: "draft-07" })).toThrow(
+      /only support.*draft-2020-12/,
+    );
+    expect(() => jsonSchema({ value: { type: 42 } } as never)).toThrow(StagehandSchemaError);
+    expect(() => jsonSchema(true as never)).toThrow(/properties must be an object/);
+  });
+
+  it("treats defaults as annotations and bounds raw-schema validation work", async () => {
+    const defaults = jsonSchema<{ page: number }>({
+      page: { type: "number", default: 1 },
+    });
+    await expect(validateStandardSchema(defaults, { page: 2 })).resolves.toEqual({ page: 2 });
+    await expect(validateStandardSchema(defaults, {})).rejects.toBeInstanceOf(
+      StagehandValidationError,
+    );
+
+    const expensive = jsonSchema({
+      items: {
+        anyOf: Array.from({ length: 100 }, () => ({
+          type: "array" as const,
+          items: { type: "number" as const },
+        })),
+      },
+    });
+    await expect(
+      validateStandardSchema(expensive, { items: Array.from({ length: 20_000 }, () => 1) }),
+    ).rejects.toThrow(/work limit/);
+  });
+
   it("generates the model schema from the validator input", async () => {
     const schema = z.object({
       length: z.string().transform((value) => value.length),
@@ -281,7 +389,7 @@ describe("extract schema boundary", () => {
     expect(() =>
       resolveExtractSchema(failingSchema(() => ({ type: "string", invalid: () => true }))),
     ).toThrow(/JSON-safe/);
-    expect(() => resolveExtractSchema({ type: "string" })).toThrow(StagehandSchemaError);
+    expect(() => resolveExtractSchema({ type: "string" })).toThrow(/jsonSchema/);
     expect(isExtractSchemaIntent({ type: "string" })).toBe(false);
   });
 
@@ -438,6 +546,69 @@ describe("runtime schema differential behavior", () => {
         expect(replacementResult.data, `mutation ${index}`).toStrictEqual(legacyResult.data);
       }
     }
+  });
+});
+
+describe("Zod 4.5 regressions used by Stagehand", () => {
+  it("folds object intersections and constrains closed tuples in JSON Schema", () => {
+    const intersection = z.toJSONSchema(
+      z.object({ name: z.string() }).and(z.object({ price: z.number() })),
+    );
+    expect(intersection).not.toHaveProperty("allOf");
+    expect(intersection).toMatchObject({
+      properties: { name: { type: "string" }, price: { type: "number" } },
+      required: ["name", "price"],
+      type: "object",
+    });
+
+    expect(z.toJSONSchema(z.tuple([z.string(), z.number()]))).toMatchObject({
+      minItems: 2,
+      maxItems: 2,
+    });
+  });
+
+  it("escapes local JSON Schema references and keeps input-mode transforms/defaults", () => {
+    const Shared = z.object({ name: z.string() }).meta({ id: "Shared/User~" });
+    const converted = z.toJSONSchema(z.object({ shared: Shared }), { reused: "ref" });
+    expect(converted).toMatchObject({
+      properties: { shared: { $ref: "#/$defs/Shared~1User~0" } },
+    });
+
+    const input = z.toJSONSchema(
+      z.object({
+        length: z.string().transform((value) => value.length),
+        page: z.number().default(1),
+      }),
+      { io: "input" },
+    );
+    expect(input).toMatchObject({
+      properties: {
+        length: { type: "string" },
+        page: { default: 1, type: "number" },
+      },
+      required: ["length"],
+    });
+  });
+
+  it("counts Unicode code points, composes pattern records, and strips __proto__", () => {
+    expect(z.string().max(5).safeParse("😀😀😀😀😀").success).toBe(true);
+    expect(z.string().min(5).safeParse("😀😀😀").success).toBe(false);
+
+    const schema = z
+      .object({ name: z.string() })
+      .and(z.record(z.string().regex(/^S_/), z.string()));
+    expect(schema.parse({ name: "widget", S_code: "ok" })).toEqual({
+      name: "widget",
+      S_code: "ok",
+    });
+
+    const polluted = JSON.parse('{"safe":"yes","__proto__":{"polluted":true}}') as Record<
+      string,
+      unknown
+    >;
+    const parsed = z.record(z.string(), z.unknown()).parse(polluted);
+    expect(Object.hasOwn(parsed, "__proto__")).toBe(false);
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
   });
 });
 

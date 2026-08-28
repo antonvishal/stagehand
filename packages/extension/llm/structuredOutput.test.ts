@@ -44,10 +44,10 @@ describe("provider JSON Schema isolation", () => {
     });
 
     await expect(contract.validate({ quantity: 2 })).resolves.toMatchObject({ success: true });
-    await expect(contract.validate({ quantity: -1 })).resolves.toMatchObject({
-      success: false,
-      issues: [expect.objectContaining({ path: ["quantity"] })],
-    });
+    const invalid = await contract.validate({ quantity: -1 });
+    expect(invalid.success).toBe(false);
+    if (invalid.success) return;
+    expect(invalid.issues).toContainEqual(expect.objectContaining({ path: ["quantity"] }));
   });
 
   it("rejects unsafe regular expressions, unknown assertions, and custom vocabularies", () => {

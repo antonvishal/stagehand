@@ -556,6 +556,8 @@ type RegisteredNotificationSchema = {
   }>;
 }[keyof typeof StagehandNotifications];
 
+// Object.values() cannot preserve the per-entry method/params correlation needed by this
+// dynamically assembled union. notification.test-d.ts pins the asserted relationship.
 const stagehandRpcNotificationSchemas = Object.values(StagehandNotifications).map((notification) =>
   JSONRPCNotificationSchema.extend({
     method: z.literal(notification.name),

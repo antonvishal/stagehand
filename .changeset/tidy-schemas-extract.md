@@ -3,7 +3,13 @@
 "@browserbasehq/stagehand-protocol": patch
 ---
 
-Restore genuine Zod schemas as Stagehand's owned schema surface and accept strict dual-standard
-schemas in `stagehand.extract()`. Converter-produced Draft 2020-12 schemas now pass a hardened,
-bounded interpreter path while final output validation remains authoritative in the caller's
-original Standard Schema implementation.
+Complete the MCP-style schema seam for `stagehand.extract()`: native Standard Schema V1 plus
+Standard JSON Schema V1 implementations remain library-neutral, while `jsonSchema()` builds a
+closed object schema from TypeBox or hand-written Draft 2020-12 property definitions. Stagehand's
+bounded, CSP-safe interpreter validates the result. Stagehand-owned schemas remain genuine Zod
+schemas, Zod stays an exact
+production dependency at `4.5.0-canary.20260827T054049`, and TypeBox is not a runtime dependency.
+
+Also export `standardSchemaToJsonSchema()` and `validateStandardSchema()`, preserve final validation
+in the caller's original schema implementation, and keep support for Zod 4.2+, ArkType 2.1.28+,
+and adapted Valibot 1.2+/`@valibot/to-json-schema` 1.5+.

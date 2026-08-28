@@ -730,7 +730,8 @@ console.log(product.data, product.metadata.cache.status);
   A validator that natively implements Standard Schema V1 and Standard JSON Schema V1. When
   omitted, extraction defaults to an object with a string `extraction` field. Stagehand constrains
   the model with the schema's input representation, then validates and returns its transformed
-  output. Validate-only schemas, plain JSON Schema, and TypeBox schemas are not accepted directly.
+  output. Validate-only schemas and plain JSON Schema property maps are not accepted directly; wrap
+  them with `jsonSchema(...)`. The helper builds a closed Draft 2020-12 object schema.
   Zod 4.2+ and ArkType work natively. Wrap Valibot schemas with the official
   `toStandardJsonSchema(...)` adapter from `@valibot/to-json-schema`.
   Support is limited to projections that pass Stagehand's hardened Draft 2020-12 profile; arbitrary
@@ -864,9 +865,21 @@ console.log(product.data, product.metadata.cache.status);
 
 ### Supported TypeScript schema implementations
 
-Minimum supported versions are Zod `4.2.0`, ArkType `2.1.28`, Valibot `1.2.0`, and
-`@valibot/to-json-schema` `1.5.0`. The workspace also tests Zod `4.4.3`, ArkType `2.2.3`, Valibot
-`1.4.2`, and adapter `1.7.1`.
+`extract()` needs two capabilities: runtime validation through Standard Schema V1 and conversion
+to Draft 2020-12 through Standard JSON Schema V1. Some libraries provide both. Others need an
+adapter.
+
+| Library | How to pass it to `extract()` | Tested or minimum version |
+| --- | --- | --- |
+| Zod | Pass the schema directly | Zod 4.2.0+; Stagehand uses `4.5.0-canary.20260827T054049` internally |
+| ArkType | Pass the type directly | ArkType 2.1.28+ |
+| Valibot | Wrap it with `toStandardJsonSchema()` | Valibot 1.2.0+ and `@valibot/to-json-schema` 1.5.0+ |
+| Effect | Add both Effect Standard Schema adapters | Effect 4 API |
+| TypeBox | Pass the generated `properties` to `jsonSchema<T>()` | TypeBox 1.3.7 tested |
+| Plain JSON Schema | Pass property definitions to `jsonSchema<T>()` | Draft 2020-12 properties |
+
+Stagehand keeps Zod as a production dependency because its own exported schemas are Zod schemas.
+ArkType, Valibot, Effect, and TypeBox stay in your application. Stagehand does not bundle them.
 
 <Tabs>
 <Tab title="Zod">
@@ -880,6 +893,9 @@ const schema = z.object({
 });
 const { data } = await stagehand.extract("extract product", schema);
 ```
+
+Zod implements both standards natively. Refinements, defaults, async validation, coercion, and
+transforms run again on the value returned by the browser.
 </Tab>
 
 <Tab title="ArkType">
@@ -889,6 +905,8 @@ import { type } from "arktype";
 const schema = type({ name: "string", "quantity?": "number >= 0" });
 const { data } = await stagehand.extract("extract inventory", schema);
 ```
+
+ArkType implements both standards natively. No Stagehand-specific adapter is needed.
 </Tab>
 
 <Tab title="Valibot">
@@ -901,34 +919,96 @@ const schema = toStandardJsonSchema(
 );
 const { data } = await stagehand.extract("extract inventory", schema);
 ```
+
+A Valibot schema implements Standard Schema validation, but `extract()` also needs its JSON Schema
+representation. `toStandardJsonSchema()` adds that second capability and keeps Valibot as the final
+validator.
 </Tab>
 
-<Tab title="Custom">
+<Tab title="Effect">
 ```typescript
-import type { StagehandSchema } from "@browserbasehq/stagehand";
+import { Schema } from "effect";
 
-const schema: StagehandSchema<string, number> = {
-  "~standard": {
-    version: 1,
-    vendor: "my-lib",
-    types: undefined,
-    validate: async (value) =>
-      typeof value === "string"
-        ? { value: value.length }
-        : { issues: [{ message: "Expected string" }] },
-    jsonSchema: {
-      input: () => ({ type: "string" }),
-      output: () => ({ type: "number" }),
-    },
-  },
-};
-const { data } = await stagehand.extract("extract label", schema);
+const Product = Schema.Struct({
+  name: Schema.String,
+  price: Schema.Number,
+});
+
+const schema = Schema.toStandardSchemaV1(
+  Schema.toStandardJSONSchemaV1(Product),
+);
+
+const { data } = await stagehand.extract("extract product", schema);
 ```
+
+Effect exposes validation and JSON Schema conversion as separate adapters. Apply both before passing
+the schema to `extract()`. The older Effect 3 Standard Schema adapter only adds validation, so it is
+not enough on its own.
 </Tab>
+
+<Tab title="TypeBox">
+```typescript
+import Type, { type Static } from "typebox";
+import { jsonSchema } from "@browserbasehq/stagehand";
+
+const ProductJsonSchema = Type.Object({
+  name: Type.String(),
+  price: Type.Number(),
+});
+const schema = jsonSchema<Static<typeof ProductJsonSchema>>(ProductJsonSchema.properties);
+const { data } = await stagehand.extract("extract product", schema);
+```
+
+TypeBox creates JSON Schema but does not provide Stagehand's combined dual-standard contract. Pass
+its property definitions to `jsonSchema()`. The explicit generic preserves TypeBox's static type.
+TypeBox is not a Stagehand runtime dependency.
+</Tab>
+
+<Tab title="Plain JSON Schema">
+```typescript
+import { jsonSchema } from "@browserbasehq/stagehand";
+
+type Product = {
+  name: string;
+  price: number;
+};
+
+const schema = jsonSchema<Product>({
+  name: { type: "string" },
+  price: { type: "number" },
+});
+const { data } = await stagehand.extract("extract product", schema);
+```
+
+Pass only property definitions. `jsonSchema()` adds the Draft 2020-12 dialect, object type, required
+property list, and `additionalProperties: false`. Every listed property is required.
+
+JSON Schema cannot infer a TypeScript type, so pass one to `jsonSchema<T>()`. The generic is a
+caller-supplied static type. Omit it when the type is unknown. Use Zod, ArkType, or adapted Valibot
+when you want the schema library to derive the return type. The adapter does not coerce values, run
+transforms, or apply `default` annotations.
+</Tab>
+
 </Tabs>
+
+#### What Stagehand does with the schema
+
+Before the browser call, Stagehand asks the schema for its Draft 2020-12 input representation. It
+rejects unsupported vocabularies, external references, nested identifier scopes, unsafe regular
+expressions, malformed keywords, and schemas that exceed resource limits.
+
+After the browser returns data, Stagehand validates it again. Native schemas and official adapters
+use the library's own validator, so their refinements and transforms remain authoritative.
+`jsonSchema()` uses Stagehand's JSON Schema interpreter and returns the value unchanged.
+
+Do not pass a TypeBox object or plain property map directly to `extract()`. Pass its properties to
+`jsonSchema()` first.
 
 Invalid schema boundaries and converter/profile failures throw `StagehandSchemaError` before RPC.
 Final validation failures throw `StagehandValidationError` with the original Standard Schema issues.
+The public `standardSchemaToJsonSchema(schema, "input" | "output")` and
+`validateStandardSchema(schema, value)` helpers expose the same conversion and validation path used
+by `extract()`.
 
 </Tab>
 
