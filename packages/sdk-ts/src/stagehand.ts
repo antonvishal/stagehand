@@ -32,11 +32,7 @@ import {
   type StagehandClientObserveOptions,
 } from "./clientSchemas.js";
 import { CDPConnectionClosedError } from "./cdpClient.js";
-import {
-  isExtractSchemaIntent,
-  resolveExtractSchema,
-  type StagehandSchema,
-} from "./schema.js";
+import { isExtractSchemaIntent, resolveExtractSchema, type StagehandSchema } from "./schema.js";
 import { STAGEHAND_SDK_CLIENT_INFO } from "./sdkIdentity.js";
 import {
   claimStagehandBrowser,

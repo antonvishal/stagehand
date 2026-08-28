@@ -10,8 +10,9 @@ import type {
   DynamicJsonSchemaValidator,
 } from "../../protocol/dynamic-json-schema.js";
 
-export interface StructuredOutputContract<Output = unknown>
-  extends DynamicJsonSchemaValidator<Output> {
+export interface StructuredOutputContract<
+  Output = unknown,
+> extends DynamicJsonSchemaValidator<Output> {
   readonly name: string;
 }
 
@@ -42,9 +43,7 @@ export function createZodStructuredOutputContract<Output>(
     jsonSchema: hardened,
     validate: (value) => {
       const result = schema.safeParse(value);
-      return result.success
-        ? { value: result.data }
-        : { issues: result.error.issues };
+      return result.success ? { value: result.data } : { issues: result.error.issues };
     },
   };
 }

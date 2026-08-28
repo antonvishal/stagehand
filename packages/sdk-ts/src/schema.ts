@@ -15,11 +15,12 @@ export type StagehandSchema<Input = unknown, Output = Input> =
 export type StagehandSchemaOutput<Schema extends StagehandSchema> = ExtractSchemaData<Schema>;
 
 /** Output data carried by extract() for a schema or a bare data type. */
-export type ExtractSchemaData<T> = T extends z.ZodType<infer Output, infer _In>
-  ? Output
-  : T extends StandardSchemaV1<infer _In, infer Out>
-    ? Out
-    : T;
+export type ExtractSchemaData<T> =
+  T extends z.ZodType<infer Output, infer _In>
+    ? Output
+    : T extends StandardSchemaV1<infer _In, infer Out>
+      ? Out
+      : T;
 
 export class StagehandValidationError extends TypeError {
   readonly issues: readonly StandardSchemaV1.Issue[];
@@ -153,9 +154,7 @@ export function resolveExtractSchema(value: unknown): ResolvedExtractSchema;
 export function resolveExtractSchema(value: unknown): ResolvedExtractSchema {
   const standard = standardProperties(value);
   if (!standard) {
-    const guidance = isJsonObject(value)
-      ? " Use jsonSchema() for raw Draft 2020-12 schemas."
-      : "";
+    const guidance = isJsonObject(value) ? " Use jsonSchema() for raw Draft 2020-12 schemas." : "";
     throw new StagehandSchemaError(
       `Unsupported schema. Stagehand requires a native Standard Schema V1 and Standard JSON Schema V1 implementation.${guidance}`,
     );

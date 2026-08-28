@@ -228,7 +228,7 @@ describe("extract service", () => {
       list: ["https://example.com/2"],
       tuple: ["https://example.com/3"],
       conditional: {
-        target: "https://example.com/4",
+        target: "0-4",
         fallback: "https://example.com/5",
       },
       dependent: { enabled: true, target: "https://example.com/6" },
@@ -259,6 +259,67 @@ describe("extract service", () => {
     const missing = { direct: "0-404" };
     expect(contract.restoreUrls(missing, mapping)).toStrictEqual({ direct: "" });
     expect(missing).toStrictEqual({ direct: "0-404" });
+  });
+
+  it("restores URLs only through the selected conditional branch", () => {
+    const schema = validateDynamicJsonSchema({
+      type: "object",
+      properties: {
+        conditional: {
+          type: "object",
+          properties: { target: { type: "string" } },
+          if: { required: ["enabled"] },
+          // oxlint-disable-next-line unicorn/no-thenable -- Draft 2020-12 conditional keyword.
+          then: { properties: { target: { type: "string", format: "uri" } } },
+          else: { properties: { target: { type: "string", pattern: "^\\d+-\\d+$" } } },
+        },
+      },
+      required: ["conditional"],
+    });
+    const contract = createUrlAwareExtractionSchema(schema);
+    const restored = contract.restoreUrls(
+      { conditional: { target: "0-1" } },
+      { "0-1": "https://example.com" },
+    );
+
+    expect(restored).toStrictEqual({ conditional: { target: "0-1" } });
+    expect(createStructuredOutputContract("conditional", schema).validate(restored)).toMatchObject({
+      value: restored,
+    });
+  });
+
+  it("restores URLs only through matching composition branches", () => {
+    for (const keyword of ["anyOf", "oneOf"] as const) {
+      const schema = validateDynamicJsonSchema({
+        [keyword]: [
+          {
+            properties: {
+              kind: { const: "url" },
+              value: { type: "string", format: "uri" },
+            },
+            required: ["kind", "value"],
+          },
+          {
+            properties: {
+              kind: { const: "text" },
+              value: { type: "string", pattern: "^\\d+-\\d+$" },
+            },
+            required: ["kind", "value"],
+          },
+        ],
+      });
+      const contract = createUrlAwareExtractionSchema(schema);
+      const mapping = { "0-1": "https://example.com" };
+
+      expect(contract.restoreUrls({ kind: "text", value: "0-1" }, mapping)).toStrictEqual({
+        kind: "text",
+        value: "0-1",
+      });
+      expect(contract.restoreUrls({ kind: "url", value: "0-1" }, mapping)).toStrictEqual({
+        kind: "url",
+        value: "https://example.com",
+      });
+    }
   });
 
   it("wraps non-object roots with relocated definitions and without mutation", () => {

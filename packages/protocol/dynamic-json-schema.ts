@@ -1,9 +1,9 @@
-import { Validator } from "@cfworker/json-schema";
+import { dereference, validate, Validator } from "@cfworker/json-schema";
 import type { Schema } from "@cfworker/json-schema";
 import { assertDynamicValueWork, schemaValidationWeight } from "./dynamic-json-schema-budget.js";
 import { validateDynamicJsonSchema } from "./dynamic-json-schema-profile.js";
 import type { DynamicJsonSchemaValidator } from "./dynamic-json-schema-types.js";
-import { DynamicJsonSchemaError } from "./dynamic-json-schema-types.js";
+import { DynamicJsonSchemaError, isJsonObject } from "./dynamic-json-schema-types.js";
 import { unescapeJsonPointerSegment } from "./dynamic-json-schema-references.js";
 import type { DynamicJsonSchema } from "./dynamic-json-schema-types.js";
 
@@ -66,6 +66,29 @@ export function createDynamicJsonSchemaValidatorFromValidated<Output = unknown>(
         })),
       };
     },
+  };
+}
+
+/** Builds a matcher for subschemas that retain references to the supplied root. */
+export function createDynamicJsonSubschemaMatcher(
+  root: DynamicJsonSchema,
+): (schema: unknown, value: unknown) => boolean {
+  let lookup: ReturnType<typeof dereference>;
+  try {
+    lookup = dereference(root as Schema);
+  } catch (cause) {
+    throw new DynamicJsonSchemaError("The Draft 2020-12 interpreter could not index this schema.", {
+      cause,
+    });
+  }
+
+  return (schema, value) => {
+    if (typeof schema !== "boolean" && !isJsonObject(schema)) return false;
+    try {
+      return validate(value, schema as Schema | boolean, "2020-12", lookup, true).valid;
+    } catch (cause) {
+      throw new DynamicJsonSchemaError("Draft 2020-12 subschema matching failed.", { cause });
+    }
   };
 }
 

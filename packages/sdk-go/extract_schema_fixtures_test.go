@@ -39,14 +39,14 @@ func TestSchemaForTypeMatchesProtocolGoldens(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read fixture: %v", err)
 			}
-			if !jsonEqual(t, raw, want) {
+			if !schemaJSONEqual(t, raw, want) {
 				t.Fatalf("schemaForType JSON = %s\nwant %s", raw, want)
 			}
 		})
 	}
 }
 
-func jsonEqual(t *testing.T, got, want []byte) bool {
+func schemaJSONEqual(t *testing.T, got, want []byte) bool {
 	t.Helper()
 	var gotValue any
 	var wantValue any

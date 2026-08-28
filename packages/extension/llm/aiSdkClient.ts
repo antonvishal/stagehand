@@ -178,9 +178,7 @@ export async function generateWithAiSdk(
 ): Promise<LLMGenerateResult> {
   const params = LLMGenerateParamsSchema.parse(input);
   let structuredOutputContract: StructuredOutputContract | undefined;
-  let structuredOutput:
-    | { output: ReturnType<typeof Output.object> }
-    | undefined;
+  let structuredOutput: { output: ReturnType<typeof Output.object> } | undefined;
   if (params.responseFormat?.type === "json_schema") {
     const format = params.responseFormat;
     structuredOutputContract = createStructuredOutputContract(
@@ -231,9 +229,7 @@ export async function generateWithAiSdk(
     finishReason: response.finishReason,
     toolCalls: response.toolCalls,
     usage: response.usage,
-    ...(params.responseFormat?.type === "json_schema"
-      ? { output: response.output }
-      : {}),
+    ...(params.responseFormat?.type === "json_schema" ? { output: response.output } : {}),
   };
 
   if (structuredOutputContract !== undefined) {

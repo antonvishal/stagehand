@@ -102,7 +102,16 @@ export function resolveLocalJsonPointer(root: Record<string, unknown>, reference
   }
   let current: unknown = root;
   for (const encodedPart of reference.slice(2).split("/")) {
-    const part = unescapeJsonPointerSegment(encodedPart);
+    let decodedPart: string;
+    try {
+      decodedPart = decodeURIComponent(encodedPart);
+    } catch (cause) {
+      throw new DynamicJsonSchemaError(
+        `JSON Schema reference contains invalid percent-encoding: ${reference}.`,
+        { cause },
+      );
+    }
+    const part = unescapeJsonPointerSegment(decodedPart);
     if (typeof current !== "object" || current === null || !Object.hasOwn(current, part)) {
       throw new DynamicJsonSchemaError(`JSON Schema reference does not resolve: ${reference}.`);
     }

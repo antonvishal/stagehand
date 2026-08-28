@@ -50,7 +50,7 @@ describe("dynamic JSON Schema boundary", () => {
     expect(() => validateDynamicJsonSchema(schema)).not.toThrow();
   });
 
-  it("resolves escaped JSON Pointer segments in local references", () => {
+  it("resolves escaped and percent-encoded JSON Pointer segments in local references", () => {
     const validator = createDynamicJsonSchemaValidator({
       type: "object",
       properties: {
@@ -62,16 +62,19 @@ describe("dynamic JSON Schema boundary", () => {
           $defs: { "tilde~type": { type: "number" } },
           $ref: "#/properties/tilde/$defs/tilde~0type",
         },
+        space: {
+          $defs: { "space type": { type: "boolean" } },
+          $ref: "#/properties/space/$defs/space%20type",
+        },
       },
-      required: ["slash", "tilde"],
+      required: ["slash", "tilde", "space"],
       additionalProperties: false,
     });
 
-    expect(validator.validate({ slash: "yes", tilde: 1 }).value).toEqual({
-      slash: "yes",
-      tilde: 1,
+    expect(validator.validate({ slash: "yes", tilde: 1, space: true })).toEqual({
+      value: { slash: "yes", tilde: 1, space: true },
     });
-    expect(validator.validate({ slash: 1, tilde: "no" }).issues).toBeDefined();
+    expect(validator.validate({ slash: 1, tilde: "no", space: "no" }).issues).toBeDefined();
   });
 
   it("validates the supported discriminator annotation shape", () => {
