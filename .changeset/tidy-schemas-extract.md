@@ -3,23 +3,12 @@
 "@browserbasehq/stagehand-protocol": patch
 ---
 
-`extract()` now accepts schemas that implement both Standard Schema V1 validation and Standard
-JSON Schema V1 conversion. Zod 4.2+ works through Stagehand's compatibility adapter, while newer
-Zod versions and ArkType provide both capabilities natively. Effect uses its
-`toStandardSchemaV1()` and `toStandardJSONSchemaV1()` adapters. Valibot requires its official
-`toStandardJsonSchema()` adapter. TypeBox and hand-written Draft 2020-12 documents can use
-`jsonSchema()`.
+require extract() schemas that both validate and convert to JSON Schema
 
-`ExtractResult<typeof schema>` still types `data` from that schema. Remaining TypeScript breaks:
+`extract()` now takes schemas that validate values and produce Draft 2020-12 JSON Schema. Zod 4.2.0+ and ArkType pass through. Wrap Valibot with `toStandardJsonSchema()`, Effect with both of its Standard Schema adapters, and TypeBox or raw JSON Schema with `jsonSchema()`.
 
-- Custom schema implementations must provide both `~standard.validate` and Standard JSON Schema
-  `input` and `output` converters. Validate-only Standard Schema implementations are rejected.
-- Zod integrations require Zod 4.2.0 or newer. Conversion uses the schema's input JSON Schema
-  representation and sets `additionalProperties: false` on objects that left the keyword unspecified.
-- Validation failures now throw `StagehandValidationError` with the original Standard Schema issues.
-  Schema conversion failures throw `StagehandSchemaError` before RPC. The extension hardens
-  Draft 2020-12 after RPC and rejects profiles that the interpreter cannot run.
+Breaking for TypeScript:
 
-`jsonSchema()` accepts a JSON object and does not interpret it in the SDK. Stagehand uses
-`@standard-schema/spec` for the exported interoperability contract. The extension uses
-`@cfworker/json-schema` for its bounded CSP-safe runtime interpreter.
+- Zod older than 4.2.0 is rejected. Validate-only Standard Schema implementations are rejected.
+- Objects that omit `additionalProperties` are sent with `additionalProperties: false`.
+- Conversion failures throw `StagehandSchemaError` before the browser call. Failed validation throws `StagehandValidationError`.
