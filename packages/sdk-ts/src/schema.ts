@@ -9,7 +9,7 @@ export type JsonSchemaDocument = { readonly [key: string]: JsonValue };
 
 const stagehandJsonSchemaSymbol = Symbol.for("@browserbasehq/stagehand/json-schema");
 
-/** A typed wrapper around a plain Draft 2020-12 JSON Schema document. */
+/** A typed wrapper around a JSON Schema object that follows Draft 2020-12. */
 export interface StagehandJsonSchema<Output = unknown> {
   readonly [stagehandJsonSchemaSymbol]: true;
   readonly jsonSchema: JsonSchemaDocument;
@@ -77,11 +77,16 @@ export interface ResolvedExtractSchema<Output = unknown> {
 
 const JSON_SCHEMA_TARGET = "draft-2020-12" as const;
 
-/** Wraps a plain Draft 2020-12 document and supplies its static output type. */
+const DRAFT_2020_12_SCHEMA = "https://json-schema.org/draft/2020-12/schema" as const;
+
+/** Wraps a Draft 2020-12 JSON Schema object and supplies its static output type. */
 export function jsonSchema<T = unknown>(document: JsonSchemaDocument): StagehandJsonSchema<T> {
   return {
     [stagehandJsonSchemaSymbol]: true,
-    jsonSchema: document,
+    jsonSchema: {
+      ...document,
+      $schema: DRAFT_2020_12_SCHEMA,
+    },
   };
 }
 
