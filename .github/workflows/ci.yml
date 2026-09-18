@@ -291,8 +291,8 @@ jobs:
           use-prebuilt-artifacts: "true"
 
       - uses: ./.github/actions/setup-chrome-verified
-        id: setup-chrome
 
+      # Browser-runtime specs run in browser-ts; root Vitest would repeat the unit suites.
       - run: pnpm exec turbo run test:unit
       - name: Save Turbo cache
         if: always()
@@ -300,10 +300,6 @@ jobs:
         with:
           path: .turbo
           key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml','pnpm-workspace.yaml','package.json','turbo.json') }}-${{ github.job }}-${{ github.sha }}
-      - run: pnpm exec vitest run
-        env:
-          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-
   browser-ts:
     name: TypeScript browser
     runs-on: ubuntu-latest
