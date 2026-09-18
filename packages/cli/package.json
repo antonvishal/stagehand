@@ -97,7 +97,7 @@
     "format:check": "prettier . --check --cache",
     "lint": "pnpm format:check && pnpm eslint && pnpm check",
     "manifest": "oclif manifest .",
-    "test": "pnpm build && vitest run",
+    "test": "pnpm -w exec turbo run build --filter browse && pnpm test:cli",
     "test:cli": "vitest run",
     "prepublishOnly": "pnpm build"
   },
