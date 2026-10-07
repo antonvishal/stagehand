@@ -124,8 +124,8 @@ describe("extension build", () => {
     expect(offscreenHtml).toContain("service-worker-heartbeat.js");
     expect(offscreenScript).toContain("StagehandExtensionServiceWorkerHeartbeat");
     expect(serviceWorker).not.toContain("src/shims");
-    expect(serviceWorker).toContain("new WebSocket");
-    expect(serviceWorker).toContain('binaryType = "arraybuffer"');
+    expect(serviceWorker).toContain("WebSocket");
+    expect(serviceWorker).toMatch(/binaryType\s*=\s*[`'"]arraybuffer[`'"]/);
     expect(serviceWorker).not.toContain("__vite-browser-external");
     expect(serviceWorker).not.toContain("__vite_browser_external");
     expect(serviceWorker).not.toContain("Node WebSocket transport is unavailable");

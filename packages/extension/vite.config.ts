@@ -109,7 +109,7 @@ async function readExtensionFiles(directory: string, relativeDirectory = ""): Pr
 export default defineConfig({
   build: {
     emptyOutDir: true,
-    minify: false,
+    minify: true,
     modulePreload: false,
     outDir,
     target: "es2022",
